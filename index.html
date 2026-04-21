@@ -1,0 +1,978 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>P2P Multiplayer Tetris</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+        body, html {
+            margin: 0; padding: 0; width: 100%; height: 100%;
+            background-color: #111827; touch-action: none;
+            overscroll-behavior: none; overflow: hidden;
+        }
+        button { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+        ::-webkit-scrollbar { display: none; }
+        #qrcode img { margin: 0 auto; border: 8px solid white; border-radius: 8px; }
+    </style>
+</head>
+<body>
+    <div id="root" class="w-full h-full"></div>
+
+    <script type="text/babel" data-type="module">
+        import React, { useState, useEffect, useRef } from 'https://esm.sh/react@18.2.0';
+        import { createRoot } from 'https://esm.sh/react-dom@18.2.0/client';
+
+        const COLS = 10;
+        const ROWS = 20;
+        const BLOCK_SIZE = 25; 
+        const MINI_BLOCK_SIZE = 12;
+        const APP_PREFIX = 'tetris-p2p-local-v1-';
+
+        const COLORS = [null, '#FF0D72', '#0DC2FF', '#0DFF72', '#F538FF', '#FF8E0D', '#FFE138', '#3877FF'];
+        const SHAPES = [[], [[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]], [[2,0,0],[2,2,2],[0,0,0]], [[0,0,3],[3,3,3],[0,0,0]], [[4,4],[4,4]], [[0,5,5],[5,5,0],[0,0,0]], [[0,6,0],[6,6,6],[0,0,0]], [[7,7,0],[0,7,7],[0,0,0]]];
+
+        // 100 BAFS True/False Questions
+        const BAFS_QUESTIONS = [
+          { q: "企業的主要目標通常是為了賺取最大利潤。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "會計等式為「資產 = 負債 - 資本」。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "機器設備在會計上屬於非流動資產。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "獨資經營的東主只需承擔「有限債務責任」。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "股份有限公司的真正擁有人是股東。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "銀行透支 (Bank Overdraft) 屬於非流動負債。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "在複式簿記系統中，每一筆交易必然是「有借必有貸」。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "專利權 (Patents) 和商譽 (Goodwill) 屬於無形資產。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "零用現金簿 (Petty Cash Book) 專門用來記錄大額的現金支出。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "試算表借貸雙方餘額相等，代表帳冊紀錄完全沒有任何錯誤。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "市場營銷組合 (4P) 包括：產品、價格、推廣和利潤。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "生產產品所使用的原材料成本屬於直接成本。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "流動比率 (Current Ratio) 的計算公式為：流動資產 ÷ 流動負債。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "毛利 (Gross Profit) 的計算方法是：銷貨減去營運開支。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "中小企業在香港經濟中扮演了「提供大量就業機會」的重要角色。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "折舊 (Depreciation) 會增加非流動資產的帳面價值。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "合夥企業的合夥人通常需要共同承擔企業的營運風險。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "企業社會責任 (CSR) 的履行對象只包含公司的股東。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "SWOT 分析中的「W」代表弱點 (Weaknesses)。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "員工滿意度問卷調查屬於「單向溝通」。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "機會成本是指放棄的下一個最佳選擇的價值。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "東主從企業提取現金自用 (提款)，會導致公司的資本增加。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "招聘與甄選是人力資源管理部門的重要功能之一。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "特許經營 (Franchising) 允許加盟商使用特許人的商標和商業模式。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "獨裁式領導風格鼓勵下屬積極參與公司的決策過程。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "投資回報率 (ROI) 是一項用來衡量企業盈利能力的指標。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "競爭對手的定價策略屬於宏觀環境因素。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "若企業資不抵債且無法清償債務，可能會面臨破產或清盤。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "財務狀況表 (Balance Sheet) 顯示企業在特定日期的財務狀況。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "購買保險是處理「投機風險」的一種常見方法。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "跨國公司是指在兩個或以上的國家擁有營運設施的企業。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "在香港，法定最低工資的實施屬於企業的「經濟環境」因素。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "公眾有限公司的股份可以在香港聯合交易所自由買賣。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "商業倫理是指企業在追求利潤時，應遵守的道德規範與行為準則。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "強積金 (MPF) 是一項自願性的退休保障計劃。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "矩陣式組織結構 (Matrix Structure) 會導致員工同時向多位主管匯報。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "目標管理 (MBO) 鼓勵員工參與制定自己的工作目標。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "授權 (Delegation) 意味著經理將「最終責任」也一併轉移給下屬。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "馬斯洛需求層次理論中，最高層次是「自我實現需求」。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "X理論的管理者通常假設員工天生喜歡工作並願意承擔責任。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "在職培訓 (On-the-job training) 通常比脫產培訓成本更高。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "計件工資制能有效激勵注重產出數量的員工。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "表現評核 (Performance Appraisal) 只應用作決定員工花紅的依據。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "市場細分 (Market Segmentation) 是指將整個市場劃分為具有相似需求的小群體。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "滲透定價法 (Penetration Pricing) 是在產品推出初期設定極高的價格以獲取高利潤。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "分銷渠道越長，生產商對產品最終零售價的控制力通常越強。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "廣告屬於「非個人」的推廣方式，並需要支付費用。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "企業的流動資產減去流動負債，稱為「營運資金 (Working Capital)」。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "速動比率 (Acid-test Ratio) 在計算時會將「存貨」包含在內。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "債務權益比率 (Gearing Ratio) 越高，代表企業的財務風險越低。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "投資者購買股票所獲得的利潤稱為「股息 (Dividend)」。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "債券持有人是公司的債權人，而非擁有人。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "銀行定期存款的流動性比活期存款高。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "複利息 (Compound Interest) 是指僅按本金計算利息。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "恆生指數 (HSI) 是反映香港股票市場整體表現的重要指標。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "信用卡透支的年利率通常低於一般的個人分期貸款。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "購買醫療保險是屬於風險轉移 (Risk Transfer) 的策略。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "在會計上，企業與其擁有者的財務紀錄應分開處理，此為「企業個體假設」。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "歷史成本原則要求資Asset應以其現時的市價記錄在帳簿中。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "一致性原則允許企業隨意更改其存貨計價方法。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "權責發生制 (Accrual Basis) 要求收益和支出應在實際收付現金時才入帳。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "銷貨退回簿 (Sales Returns Journal) 用於記錄顧客退回的賒購貨品。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "現金折扣 (Cash Discount) 是為了鼓勵顧客大批量購買而提供的折扣。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "銀行存款餘額調節表 (Bank Reconciliation Statement) 是由銀行編製並寄給企業的。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "未兌現支票 (Unpresented Cheques) 會導致現金簿餘額低於銀行結單餘額。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "試算表 (Trial Balance) 是一份列出所有分類帳帳戶餘額的報表。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "原始分錄錯誤 (Error of Original Entry) 發生時，試算表的借貸雙方餘額仍會相等。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "購貨運費 (Carriage Inwards) 應在損益表中作為營業費用扣除。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "呆帳 (Bad Debts) 發生時，應借記呆帳帳戶，貸記應收帳款帳戶。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "呆帳準備 (Allowance for doubtful debts) 餘額增加，代表當期利潤會上升。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "存貨計價方法中，先進先出法 (FIFO) 假設最先購入的貨品會最先被售出。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "在物價上漲期間，使用後進先出法 (LIFO) 計算出的期末存貨價值會較高。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "直線折舊法 (Straight-line method) 每年計提的折舊費用金額皆相同。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "餘額遞減法 (Reducing balance method) 在資產使用初期會產生較低的折舊費用。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "出售非流動資產時的利潤或損失，應記錄在損益表中。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "控制統馭帳戶 (Control Accounts) 可用於防止及查出分類帳中的錯誤。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "應收帳款統馭帳戶的餘額，應等於銷貨分類帳中各顧客帳戶餘額的總和。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "合夥企業的合夥協議中，如果沒有規定利潤分配比例，則一律按出資比例分配。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "當合夥人從企業中提取現金時，應借記其往來帳戶 (Current Account)。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "股份有限公司必須向公眾披露其經審計的年度財務報表。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "發行普通股籌集資金，會增加企業的財務負擔 (如固定利息支出)。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "保留利潤 (Retained Profits) 屬於企業的內部融資來源。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "流動比率若小於 1，代表企業可能有短期償債困難。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "存貨周轉率 (Inventory Turnover) 越高，通常代表存貨滯銷的風險越高。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "提高產品的售價，一定會導致企業的總收入增加。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "管理的四大功能為：計劃、組織、領導和控制。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "戰略計劃 (Strategic Plan) 通常是由中層管理人員制定的短期計劃。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "組織圖 (Organization Chart) 可以顯示企業內部的溝通渠道與層級關係。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "管理幅度 (Span of Control) 是指一位主管直接監督的下屬人數。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "專制型領導者 (Autocratic Leader) 喜歡將決策權下放給員工。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "內部招募能為企業帶來新思維與新視角。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "裁員 (Redundancy) 通常是由於員工表現不佳而導致的解僱。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "產品生命週期的「成熟期」通常伴隨著最激烈的市場競爭。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "焦點小組 (Focus Group) 屬於二手市場數據的收集方法。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "公共關係 (Public Relations) 旨在建立並維持企業與公眾之間的良好形象。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "預算 (Budget) 是一種以貨幣或數量形式表示的財務計劃。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "差異分析 (Variance Analysis) 是比較「實際結果」與「預算數字」以找出偏差原因。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "短期融資通常用於購買昂貴的機器設備。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 },
+          { q: "財務槓桿 (Financial Leverage) 是指企業利用債務來增加股東的潛在回報。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 0 },
+          { q: "企業的利潤與現金流是完全相同的概念。", options: ["(A) 是 (True)", "(B) 否 (False)"], ans: 1 }
+        ];
+
+        const createMatrix = (w, h) => Array.from({ length: h }, () => new Array(w).fill(0));
+
+        function App() {
+          const [view, setView] = useState('loading');
+          const [playerName, setPlayerName] = useState('');
+          const [securityBlocked, setSecurityBlocked] = useState(false);
+          const [roomCode, setRoomCode] = useState(() => new URLSearchParams(window.location.search).get('room') || '');
+
+          useEffect(() => {
+            try {
+              const testWs = new WebSocket('wss://0.peerjs.com:443/');
+              testWs.onerror = () => {}; testWs.close();
+            } catch (e) { 
+              setSecurityBlocked(true); 
+              return;
+            }
+
+            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
+                             (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+            if (roomCode) {
+              setView('menu');
+            } else if (!isMobile) {
+              setView('host');
+            } else {
+              setView('menu');
+            }
+          }, []);
+
+          if (securityBlocked) {
+            return (
+              <div className="h-full w-full flex flex-col items-center justify-center bg-gray-900 text-white p-6 text-center">
+                <h1 className="text-4xl font-black text-red-500 mb-4">Preview Restricted</h1>
+                <p className="mb-8 text-gray-300">Save this code as index.html and run it locally to play!</p>
+              </div>
+            );
+          }
+
+          if (view === 'loading') {
+              return <div className="h-full w-full bg-gray-900 flex items-center justify-center text-white">Loading...</div>;
+          }
+
+          return (
+            <div className="h-full w-full bg-gray-900 text-white font-sans flex flex-col">
+              {view === 'menu' && <MainMenu initialRoomCode={roomCode} onHost={() => setView('host')} onJoin={(code, name) => { setRoomCode(code); setPlayerName(name); setView('player'); window.history.replaceState({}, '', window.location.pathname); }} />}
+              {view === 'host' && <HostConsole onExit={() => setView('menu')} />}
+              {view === 'player' && <PlayerClient roomCode={roomCode} playerName={playerName} onExit={() => setView('menu')} />}
+            </div>
+          );
+        }
+
+        function MainMenu({ initialRoomCode, onHost, onJoin }) {
+          const [joinCode, setJoinCode] = useState(initialRoomCode || '');
+          const [name, setName] = useState('');
+          
+          const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
+                         (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+          return (
+            <div className="flex flex-col items-center justify-center h-full space-y-8 p-4">
+              <h1 className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-green-400 text-center">P2P TETRIS</h1>
+              <div className="flex flex-col md:flex-row gap-8 w-full max-w-4xl">
+                {!isMobile && (
+                  <div className="flex-1 bg-gray-800 p-8 rounded-2xl border border-gray-700 flex flex-col items-center">
+                    <h2 className="text-2xl font-bold mb-4">主機看板 (電腦)</h2>
+                    <button onClick={onHost} className="w-full py-4 bg-blue-600 rounded-xl font-bold text-xl hover:bg-blue-500 transition-colors">建立房間</button>
+                  </div>
+                )}
+                <div className="flex-1 bg-gray-800 p-8 rounded-2xl border border-gray-700 flex flex-col">
+                  <h2 className="text-2xl font-bold mb-4 text-center">玩家 (iPad/手機)</h2>
+                  <input type="text" placeholder="暱稱" value={name} onChange={(e) => setName(e.target.value)} className="bg-gray-900 p-4 rounded-xl mb-4 text-center text-xl outline-none focus:ring-2 focus:ring-green-500" />
+                  <input type="text" placeholder="房間代碼" value={joinCode} onChange={(e) => setJoinCode(e.target.value.substring(0,4))} className="bg-gray-900 p-4 rounded-xl mb-4 text-center text-xl outline-none" />
+                  <button onClick={() => onJoin(joinCode, name)} disabled={!name || joinCode.length !== 4} className="w-full py-4 bg-green-600 disabled:opacity-50 rounded-xl font-bold text-xl hover:bg-green-500 transition-colors">加入遊戲</button>
+                </div>
+              </div>
+              {isMobile && (
+                <p className="text-gray-500 text-sm">偵測到行動裝置：請輸入代碼或掃描 QR Code 加入。</p>
+              )}
+            </div>
+          );
+        }
+
+        // Helper function to generate shuffled array
+        function generateShuffledIndices() {
+            const arr = Array.from({length: BAFS_QUESTIONS.length}, (_, i) => i);
+            for (let i = arr.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [arr[i], arr[j]] = [arr[j], arr[i]];
+            }
+            return arr;
+        }
+
+        function HostConsole({ onExit }) {
+          const [roomCode, setRoomCode] = useState('');
+          const [players, setPlayers] = useState({});
+          const playersRef = useRef(players);
+          
+          const [roomStatus, setRoomStatus] = useState('waiting');
+          const roomStatusRef = useRef(roomStatus);
+          
+          const [gameMode, setGameMode] = useState('easy'); 
+          const gameModeRef = useRef(gameMode);
+          
+          const [showQR, setShowQR] = useState(true);
+          const [selectedPlayerId, setSelectedPlayerId] = useState(null);
+          const [speedUpCooldown, setSpeedUpCooldown] = useState(false);
+          const [autoAttackTimer, setAutoAttackTimer] = useState(30);
+          
+          const peerRef = useRef(null);
+          const qrRef = useRef(null);
+          const connectionsRef = useRef({});
+
+          // Q&A States & Randomization
+          const [qaStarted, setQaStarted] = useState(false);
+          
+          // Initializes shuffled indices
+          const [shuffledIndices, setShuffledIndices] = useState(generateShuffledIndices);
+          
+          const [qStep, setQStep] = useState(0); 
+          const qIndex = shuffledIndices[qStep]; 
+
+          const [qaTimeLeft, setQaTimeLeft] = useState(15);
+          const [qaShowAnswer, setQaShowAnswer] = useState(false);
+
+          useEffect(() => {
+            roomStatusRef.current = roomStatus;
+          }, [roomStatus]);
+
+          useEffect(() => {
+            playersRef.current = players;
+          }, [players]);
+          
+          useEffect(() => {
+            gameModeRef.current = gameMode;
+          }, [gameMode]);
+
+          useEffect(() => {
+            const code = Math.floor(1000 + Math.random() * 9000).toString();
+            setRoomCode(code);
+            const peer = new window.Peer(`${APP_PREFIX}${code}`);
+            peerRef.current = peer;
+            peer.on('connection', (conn) => {
+              connectionsRef.current[conn.peer] = conn;
+              conn.on('data', (data) => {
+                if (data.type === 'join') {
+                  if (roomStatusRef.current === 'playing') {
+                     conn.send({ type: 'status', status: 'rejected' });
+                     setTimeout(() => conn.close(), 500); 
+                     return;
+                  }
+                  if (Object.keys(playersRef.current).length >= 10) {
+                     conn.send({ type: 'status', status: 'full' });
+                     setTimeout(() => conn.close(), 500); 
+                     return;
+                  }
+                  
+                  setPlayers(p => ({...p, [conn.peer]: {id: conn.peer, name: data.name, score: 0, speedLevel: 1, isGameOver: false, grid: createMatrix(COLS, ROWS)}}));
+                  conn.send({ type: 'status', status: roomStatusRef.current, gameMode: gameModeRef.current });
+                } else if (data.type === 'state') {
+                  setPlayers(p => ({...p, [conn.peer]: {...p[conn.peer], ...data}}));
+                }
+              });
+              conn.on('close', () => setPlayers(p => { const n = {...p}; delete n[conn.peer]; return n; }));
+            });
+            return () => peer.destroy();
+          }, []);
+
+          useEffect(() => {
+            if (roomCode && qrRef.current) {
+              qrRef.current.innerHTML = "";
+              const joinUrl = `${window.location.origin}${window.location.pathname}?room=${roomCode}`;
+              new QRCode(qrRef.current, {
+                text: joinUrl,
+                width: 180,
+                height: 180,
+                colorDark : "#000000",
+                colorLight : "#ffffff",
+                correctLevel : QRCode.CorrectLevel.H
+              });
+            }
+          }, [roomCode, showQR]);
+
+          // Auto-Attack Logic for Hard Mode
+          useEffect(() => {
+            if (roomStatus === 'playing' && gameMode === 'auto') {
+              setAutoAttackTimer(30);
+              const timer = setInterval(() => {
+                setAutoAttackTimer((prev) => {
+                  if (prev <= 1) {
+                    Object.values(connectionsRef.current).forEach(c => {
+                      if (c.open) c.send({ type: 'command', action: 'speedUp' });
+                    });
+                    setSpeedUpCooldown(true);
+                    setTimeout(() => setSpeedUpCooldown(false), 2000);
+                    return 30;
+                  }
+                  return prev - 1;
+                });
+              }, 1000);
+              return () => clearInterval(timer);
+            }
+          }, [roomStatus, gameMode]);
+
+          // Q&A Timer Logic
+          useEffect(() => {
+            if (!qaStarted) return;
+            
+            let timer;
+            if (qaShowAnswer) {
+              timer = setTimeout(() => {
+                setQaShowAnswer(false);
+                setQStep((prev) => (prev + 1) % BAFS_QUESTIONS.length);
+                setQaTimeLeft(15);
+              }, 3000);
+            } else {
+              if (qaTimeLeft > 0) {
+                timer = setTimeout(() => setQaTimeLeft((prev) => prev - 1), 1000);
+              } else {
+                setQaShowAnswer(true);
+              }
+            }
+            return () => clearTimeout(timer);
+          }, [qaTimeLeft, qaShowAnswer, qaStarted]);
+
+          useEffect(() => {
+            Object.values(connectionsRef.current).forEach(c => {
+              if (c.open) {
+                c.send({ 
+                  type: 'qa_state', 
+                  started: qaStarted, 
+                  qIndex: qIndex, 
+                  timeLeft: qaTimeLeft, 
+                  showAnswer: qaShowAnswer 
+                });
+              }
+            });
+          }, [qaStarted, qIndex, qaTimeLeft, qaShowAnswer]);
+
+          const broadcastStatus = (status) => {
+            setRoomStatus(status);
+            Object.values(connectionsRef.current).forEach(c => c.open && c.send({ type: 'status', status, gameMode: gameModeRef.current }));
+            
+            if (status === 'playing') {
+                setShowQR(false);
+                // 每次點擊 START GAME 時，重新隨機洗牌題目順序
+                setShuffledIndices(generateShuffledIndices());
+                setQStep(0); 
+            } else if (status === 'waiting') {
+                setQaStarted(false);
+                setQStep(0); 
+                setQaTimeLeft(15);
+                setQaShowAnswer(false);
+            }
+          };
+
+          const handleManualSpeedUp = () => {
+            const conn = connectionsRef.current[selectedPlayerId];
+            if (selectedPlayerId && conn) {
+              conn.send({ type: 'command', action: 'speedUp' });
+              
+              setSpeedUpCooldown(true);
+              setTimeout(() => setSpeedUpCooldown(false), 2000);
+            }
+          };
+
+          const currentQuestion = BAFS_QUESTIONS[qIndex];
+          const playerArray = Object.values(players);
+          const bestPlayer = playerArray.length > 0 ? playerArray.reduce((max, p) => (p.score || 0) > (max.score || 0) ? p : max, playerArray[0]) : null;
+
+          return (
+            <div className="h-full flex flex-col p-4 bg-slate-950">
+              <div className="flex flex-col lg:flex-row justify-between items-center bg-gray-800 p-4 rounded-2xl mb-4 gap-4 shrink-0 shadow-lg relative">
+                
+                <div className="flex items-center gap-6 z-10 w-full lg:w-auto justify-center lg:justify-start">
+                  <div className="text-3xl lg:text-4xl font-mono font-black text-blue-400">ROOM: {roomCode}</div>
+                  <button onClick={() => setShowQR(!showQR)} className="text-xs bg-gray-700 px-3 py-1 rounded hover:bg-gray-600">
+                    {showQR ? "隱藏 QR Code" : "顯示 QR Code"}
+                  </button>
+                </div>
+                
+                {bestPlayer && bestPlayer.score > 0 && (
+                  <div className="z-0 lg:absolute lg:left-1/2 lg:transform lg:-translate-x-1/2 flex flex-col items-center pointer-events-none">
+                    <span className="text-sm font-bold text-yellow-500 tracking-wider">🏆 目前領先</span>
+                    <span className="text-3xl font-black text-yellow-400 drop-shadow-[0_0_10px_rgba(250,204,21,0.5)]">
+                      {bestPlayer.name} ({bestPlayer.score})
+                    </span>
+                  </div>
+                )}
+                
+                <div className="flex flex-wrap justify-center gap-2 lg:gap-4 z-10 w-full lg:w-auto items-center">
+                  {roomStatus === 'waiting' && (
+                    <select 
+                      value={gameMode}
+                      onChange={(e) => setGameMode(e.target.value)}
+                      className="px-4 py-2.5 bg-gray-700 text-white rounded-xl font-bold outline-none cursor-pointer border border-gray-600 appearance-none"
+                    >
+                      <option value="easy">🟢 簡單 (無自動加速)</option>
+                      <option value="auto">🔴 困難 (全體自動加速)</option>
+                    </select>
+                  )}
+                  
+                  {roomStatus === 'playing' && gameMode === 'auto' && (
+                    <div className="px-4 py-2 bg-red-900/50 border border-red-700 text-red-400 rounded-xl font-bold flex items-center gap-2">
+                      ⏳ 自動加速: {autoAttackTimer}s
+                    </div>
+                  )}
+
+                  <button 
+                    onClick={handleManualSpeedUp} 
+                    disabled={roomStatus !== 'playing' || !selectedPlayerId || speedUpCooldown} 
+                    className={`px-6 py-2 rounded-xl font-bold text-lg transition-all flex items-center gap-2 ${speedUpCooldown || roomStatus !== 'playing' || !selectedPlayerId ? 'bg-gray-700 text-gray-400 cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-500 shadow-[0_0_15px_rgba(168,85,247,0.6)]'}`}
+                  >
+                    {speedUpCooldown ? '⚡ 已發送' : '⚡ 手動加速'}
+                  </button>
+                  
+                  <button onClick={() => broadcastStatus(roomStatus === 'playing' ? 'waiting' : 'playing')} className={`px-6 py-2 rounded-xl font-bold text-lg transition-colors ${roomStatus === 'waiting' ? 'bg-green-600 hover:bg-green-500' : 'bg-orange-600 hover:bg-orange-500'}`}>
+                    {roomStatus === 'waiting' ? 'START GAME' : 'RESET ROOM'}
+                  </button>
+                  <button onClick={onExit} className="px-6 py-2 bg-red-600 hover:bg-red-500 rounded-xl font-bold text-lg transition-colors">EXIT</button>
+                </div>
+              </div>
+
+              <div className="flex-1 flex flex-col lg:flex-row gap-4 overflow-hidden">
+                
+                <div className="w-full lg:w-[350px] xl:w-[400px] bg-gray-800 rounded-2xl p-6 border border-gray-700 shrink-0 shadow-xl flex flex-col overflow-y-auto relative">
+                  {!qaStarted ? (
+                    <div className="flex-1 flex justify-center items-center py-4 w-full min-h-[200px]">
+                      <button 
+                        onClick={() => setQaStarted(true)} 
+                        className="px-6 py-4 bg-indigo-600 hover:bg-indigo-500 rounded-xl font-bold text-xl shadow-lg flex items-center gap-3 transition-colors text-left"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        開始 BAFS Q&A 挑戰
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex justify-between items-start mb-4">
+                        <h3 className="text-lg font-black text-yellow-400 flex items-center gap-2">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          挑戰 ({qStep + 1}/{BAFS_QUESTIONS.length})
+                        </h3>
+                        
+                        <div className="relative flex items-center justify-center w-14 h-14 rounded-full border-4 border-gray-600 bg-gray-900 shadow-inner shrink-0">
+                          <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-yellow-400 animate-spin" style={{ animationDuration: '3s', opacity: qaShowAnswer ? 0 : 1 }}></div>
+                          <span className={`text-xl font-black ${qaTimeLeft <= 5 && !qaShowAnswer ? 'text-red-500 animate-pulse' : 'text-white'}`}>
+                            {qaShowAnswer ? 'ANS' : qaTimeLeft}
+                          </span>
+                        </div>
+                      </div>
+                      
+                      <p className="text-xl font-bold mb-6 text-white">{currentQuestion.q}</p>
+                      
+                      <div className="flex flex-col gap-3 mt-auto">
+                        {currentQuestion.options.map((opt, i) => {
+                          let btnClass = 'bg-gray-700 text-gray-200 border-gray-600';
+                          if (qaShowAnswer) {
+                            if (i === currentQuestion.ans) {
+                              btnClass = 'bg-green-600 border-green-400 text-white font-bold shadow-[0_0_15px_rgba(74,222,128,0.5)]';
+                            } else {
+                              btnClass = 'bg-gray-800 opacity-40 border-gray-800';
+                            }
+                          }
+                          return (
+                            <div key={i} className={`p-4 rounded-xl border-2 transition-all duration-300 ${btnClass}`}>
+                              {opt}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                <div className="flex-1 flex gap-4 overflow-hidden">
+                  <div className="flex-1 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 overflow-y-auto pr-2 pb-4">
+                    {Object.values(players).length === 0 ? (
+                      <div className="col-span-full flex flex-col items-center justify-center text-gray-500 italic h-32">
+                        <p>等待玩家加入...</p>
+                      </div>
+                    ) : (
+                      Object.values(players).map((p) => (
+                        <PlayerMiniBoard 
+                          key={p.id} 
+                          player={p} 
+                          isSelected={selectedPlayerId === p.id}
+                          onSelect={() => setSelectedPlayerId(p.id)}
+                        />
+                      ))
+                    )}
+                  </div>
+
+                  {showQR && (
+                    <div className="w-64 bg-gray-800 rounded-2xl p-6 flex flex-col items-center justify-center border border-gray-700 shrink-0 self-start shadow-xl">
+                      <div className="text-center mb-4">
+                        <p className="font-bold text-sm mb-1 text-white">掃描加入遊戲</p>
+                        <p className="text-xs text-gray-400">讓 iPad/手機掃描二維碼</p>
+                      </div>
+                      <div id="qrcode" ref={qrRef} className="bg-white p-2 rounded-lg"></div>
+                      <div className="mt-4 text-[10px] text-gray-500 break-all text-center font-mono">
+                        {window.location.origin}{window.location.pathname}?room={roomCode}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        function PlayerMiniBoard({ player, isSelected, onSelect }) {
+          const canvasRef = useRef(null);
+          useEffect(() => {
+            const ctx = canvasRef.current.getContext('2d');
+            ctx.fillStyle = '#111827'; ctx.fillRect(0,0,120,240);
+            (player.grid || []).forEach((row, y) => row.forEach((v, x) => { if(v) { ctx.fillStyle = COLORS[v]; ctx.fillRect(x*12, y*12, 11, 11); } }));
+            if (player.currentPiece && !player.isGameOver) {
+              player.currentPiece.matrix.forEach((row, y) => row.forEach((v, x) => { if(v) { ctx.fillStyle = COLORS[v]; ctx.fillRect((player.currentPiece.pos.x+x)*12, (player.currentPiece.pos.y+y)*12, 11, 11); } }));
+            }
+          }, [player]);
+          
+          return (
+            <div 
+              onClick={onSelect}
+              className={`p-2 rounded-xl border-4 cursor-pointer transition-all flex flex-col items-center ${isSelected ? 'bg-gray-800 border-purple-500 shadow-[0_0_15px_rgba(168,85,247,0.6)] transform scale-105 z-10' : 'bg-gray-800 border-gray-700 hover:border-gray-500'}`}
+            >
+              <div className="flex justify-between w-full text-[10px] font-bold mb-1 px-1">
+                <span className="truncate max-w-[50px] text-gray-200">{player.name}</span>
+                <span className="text-yellow-400">⚡{player.speedLevel || 1}</span>
+                <span className="text-green-400">{player.score || 0}</span>
+              </div>
+              <div className="relative mt-1">
+                <canvas ref={canvasRef} width={120} height={240} className="bg-black rounded border border-gray-900" />
+                {player.isGameOver && (
+                  <div className="absolute inset-0 bg-red-900/40 flex items-center justify-center rounded">
+                    <span className="text-[10px] font-black bg-black px-1 rounded">GAME OVER</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        }
+
+        function PlayerClient({ roomCode, playerName, onExit }) {
+          const [roomStatus, setRoomStatus] = useState('connecting');
+          const [score, setScore] = useState(0);
+          const [speedLevel, setSpeedLevel] = useState(1);
+          const [gameMode, setGameMode] = useState('easy');
+          const [isGameOver, setIsGameOver] = useState(false);
+          const [flashMsg, setFlashMsg] = useState('');
+          const connRef = useRef(null);
+          const engineRef = useRef(null);
+
+          const [qaState, setQaState] = useState({ started: false, qIndex: 0, timeLeft: 0, showAnswer: false });
+          const [myAnswer, setMyAnswer] = useState(null);
+
+          useEffect(() => {
+            const peer = new window.Peer();
+            peer.on('open', () => {
+              const conn = peer.connect(`${APP_PREFIX}${roomCode}`);
+              connRef.current = conn;
+              conn.on('open', () => { 
+                setRoomStatus('waiting'); 
+                conn.send({ type: 'join', name: playerName || '無名氏' }); 
+              });
+              conn.on('data', (d) => { 
+                if (d.type === 'status') {
+                  setRoomStatus(d.status); 
+                  if (d.gameMode) setGameMode(d.gameMode);
+                  if (d.status === 'waiting') {
+                      setSpeedLevel(1); 
+                  }
+                } else if (d.type === 'command' && d.action === 'speedUp') {
+                  setSpeedLevel(prev => prev + 1); 
+                  setFlashMsg('⚠️ 加速! ⚠️');
+                  setTimeout(() => setFlashMsg(''), 2000);
+                } else if (d.type === 'qa_state') {
+                  setQaState(prev => {
+                      if (prev.qIndex !== d.qIndex) {
+                          setMyAnswer(null); 
+                      }
+                      return { started: d.started, qIndex: d.qIndex, timeLeft: d.timeLeft, showAnswer: d.showAnswer };
+                  });
+                }
+              });
+              conn.on('close', () => setRoomStatus(prev => (prev === 'rejected' || prev === 'full') ? prev : 'disconnected'));
+            });
+            return () => peer.destroy();
+          }, []);
+
+          const handleUpdate = (s) => {
+            setScore(s.score); 
+            setIsGameOver(s.isGameOver);
+            if(connRef.current?.open) connRef.current.send({ type: 'state', ...s, speedLevel });
+          };
+
+          const handleAnswer = (idx) => {
+              if (qaState.showAnswer || myAnswer !== null) return;
+              setMyAnswer(idx);
+              
+              if (idx === BAFS_QUESTIONS[qaState.qIndex].ans) {
+                  engineRef.current?.addScore(500);
+                  setFlashMsg('✅ 答對了! +500分 ✅');
+                  setTimeout(() => setFlashMsg(''), 2000);
+              } else {
+                  setFlashMsg('❌ 答錯了! ❌');
+                  setTimeout(() => setFlashMsg(''), 2000);
+              }
+          };
+
+          const currentQuestion = BAFS_QUESTIONS[qaState.qIndex];
+
+          return (
+            <div className="h-full w-full flex flex-col bg-black">
+              <div className="p-4 bg-gray-900 flex justify-between items-center shrink-0">
+                <button onClick={onExit} className="bg-gray-700 px-4 py-2 rounded-lg font-bold">EXIT</button>
+                <div className="flex gap-4 items-center">
+                    <div className="text-xl font-bold text-yellow-400 flex items-center gap-1">
+                        <span>⚡</span> {speedLevel}
+                    </div>
+                    <div className="text-xl font-bold text-green-400">SCORE: {score}</div>
+                </div>
+              </div>
+
+              {roomStatus !== 'playing' ? (
+                <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center p-6">
+                  <div className="text-2xl font-bold animate-pulse">
+                    {roomStatus === 'connecting' && '連線中...'}
+                    {roomStatus === 'waiting' && '等待主機開始...'}
+                    {roomStatus === 'disconnected' && '與主機斷開連線'}
+                    {roomStatus === 'rejected' && '遊戲已開始，無法加入房間'}
+                    {roomStatus === 'full' && '房間已滿 (最多 10 人)'}
+                  </div>
+                  {roomStatus === 'waiting' && (
+                    <div className="flex flex-col items-center gap-2">
+                        <p className="text-gray-500">你是: {playerName}</p>
+                        <p className="text-sm font-bold px-3 py-1 rounded-full bg-gray-800 text-gray-300">
+                            模式: {gameMode === 'easy' ? '🟢 簡單 (無自動加速)' : '🔴 困難 (全體自動加速)'}
+                        </p>
+                    </div>
+                  )}
+                  {(roomStatus === 'disconnected' || roomStatus === 'rejected' || roomStatus === 'full') && <button onClick={onExit} className="bg-blue-600 px-6 py-2 rounded-xl">返回菜單</button>}
+                </div>
+              ) : (
+                <div className="flex-1 flex flex-col md:flex-row items-center justify-center p-2 gap-4 h-full w-full overflow-hidden">
+                  
+                  {qaState.started && (
+                    <div className="w-full md:w-64 lg:w-80 bg-gray-800 rounded-xl p-4 flex flex-col shrink-0 shadow-lg border border-gray-700 h-auto md:h-[550px] max-h-48 md:max-h-[550px] overflow-y-auto">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-yellow-400 font-bold">Q&A 挑戰</span>
+                        <span className={`font-mono font-bold ${qaState.timeLeft <= 5 && !qaState.showAnswer ? 'text-red-500 animate-pulse' : 'text-gray-300'}`}>
+                          {qaState.showAnswer ? '答案' : `⏱ ${qaState.timeLeft}s`}
+                        </span>
+                      </div>
+                      <p className="text-sm font-bold text-white mb-4">{currentQuestion.q}</p>
+                      <div className="flex flex-col gap-2">
+                        {currentQuestion.options.map((opt, i) => {
+                          let btnClass = 'bg-gray-700 text-gray-200 border-gray-600 hover:bg-gray-600';
+                          
+                          if (qaState.showAnswer) {
+                            if (i === currentQuestion.ans) btnClass = 'bg-green-600 text-white font-bold border-green-500';
+                            else if (i === myAnswer) btnClass = 'bg-red-600 text-white font-bold border-red-500';
+                            else btnClass = 'bg-gray-800 text-gray-500 opacity-50';
+                          } else if (myAnswer === i) {
+                            btnClass = 'bg-blue-600 text-white font-bold border-blue-500';
+                          } else if (myAnswer !== null) {
+                            btnClass = 'bg-gray-700 text-gray-400 opacity-50 cursor-not-allowed';
+                          }
+
+                          return (
+                            <button 
+                              key={i} 
+                              onClick={() => handleAnswer(i)}
+                              disabled={myAnswer !== null || qaState.showAnswer}
+                              className={`p-2 rounded-lg border-2 text-left text-sm transition-all ${btnClass}`}
+                            >
+                              {opt}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex-1 flex flex-col items-center justify-evenly w-full h-full max-w-xl">
+                    <div className="relative border-4 border-gray-800 rounded-xl bg-gray-900 shadow-2xl shrink-0">
+                      
+                      <TetrisEngine ref={engineRef} onUpdate={handleUpdate} isActive={!isGameOver} speedLevel={speedLevel} gameMode={gameMode} />
+                      
+                      {flashMsg && (
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10 bg-black/40 rounded-lg">
+                          <span className="text-3xl md:text-5xl font-black text-yellow-400 drop-shadow-[0_0_15px_rgba(250,204,21,1)] text-center px-2">
+                            {flashMsg}
+                          </span>
+                        </div>
+                      )}
+                      {isGameOver && <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center text-3xl font-black text-red-500 z-20">
+                          GAME OVER
+                          <button onClick={() => window.location.reload()} className="mt-4 text-sm bg-white text-black px-4 py-2 rounded">再玩一次</button>
+                      </div>}
+                    </div>
+
+                    <div className="w-full flex flex-col gap-3 md:gap-4 px-2 md:px-4 pb-2 md:pb-4 mt-2">
+                      <div className="flex justify-between gap-3 md:gap-4">
+                         <TouchButton onClick={() => engineRef.current?.move(-1)} icon="◀" label="LEFT" color="bg-blue-600" />
+                         <TouchButton onClick={() => engineRef.current?.drop()} icon="▼" label="SOFT" color="bg-gray-600" />
+                         <TouchButton onClick={() => engineRef.current?.move(1)} icon="▶" label="RIGHT" color="bg-blue-600" />
+                      </div>
+                      <div className="flex justify-center gap-3 md:gap-4">
+                         <TouchButton onClick={() => engineRef.current?.rotate()} icon="↻" label="ROTATE" color="bg-purple-600" />
+                         <TouchButton onClick={() => engineRef.current?.hardDrop()} icon="⏬" label="HARD DROP" color="bg-red-600" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        }
+
+        function TouchButton({ onClick, icon, label, color }) {
+          return (
+            <button 
+              onPointerDown={(e) => { e.preventDefault(); onClick(); }}
+              className={`${color} flex-1 h-16 md:h-24 rounded-2xl flex flex-col items-center justify-center active:scale-90 transition-transform shadow-lg`}
+            >
+              <span className="text-2xl md:text-3xl font-bold">{icon}</span>
+              <span className="text-[10px] font-black opacity-80 uppercase">{label}</span>
+            </button>
+          );
+        }
+
+        const TetrisEngine = React.forwardRef(({ onUpdate, isActive, speedLevel, gameMode }, ref) => {
+          const canvasRef = useRef(null);
+          const onUpdateRef = useRef(onUpdate);
+          useEffect(() => { onUpdateRef.current = onUpdate; }, [onUpdate]);
+
+          const state = useRef({ 
+              grid: createMatrix(COLS, ROWS), 
+              player: { pos: { x: 0, y: 0 }, matrix: null, score: 0 }, 
+              dropCounter: 0, 
+              dropInterval: 1000, 
+              lastTime: 0, 
+              isGameOver: false,
+              speedMultiplier: 1.0
+          });
+
+          const recalculateSpeed = () => {
+             const baseInterval = gameMode === 'easy' 
+                 ? 1000 
+                 : Math.max(100, 1000 - (state.current.player.score / 5));
+             
+             const multiplier = Math.pow(0.6, Math.max(1, speedLevel) - 1);
+             
+             state.current.speedMultiplier = multiplier;
+             state.current.dropInterval = Math.max(30, baseInterval * multiplier);
+          };
+
+          useEffect(() => {
+             recalculateSpeed();
+             state.current.dropCounter = 0; 
+          }, [speedLevel, gameMode]);
+
+          const collide = (g, p) => {
+            const {matrix: m, pos: o} = p;
+            for (let y = 0; y < m.length; ++y) {
+              for (let x = 0; x < m[y].length; ++x) {
+                if (m[y][x] !== 0 && (g[y + o.y] && g[y + o.y][x + o.x]) !== 0) return true;
+              }
+            }
+            return false;
+          };
+
+          const resetPlayer = () => {
+            const p = 'IJLOSZT';
+            const type = p[p.length * Math.random() | 0];
+            state.current.player.matrix = SHAPES['0IJLOSZT'.indexOf(type)];
+            state.current.player.pos = { y: 0, x: (COLS / 2 | 0) - (state.current.player.matrix[0].length / 2 | 0) };
+            if (collide(state.current.grid, state.current.player)) state.current.isGameOver = true;
+          };
+
+          const drop = () => {
+            state.current.player.pos.y++;
+            if (collide(state.current.grid, state.current.player)) {
+              state.current.player.pos.y--;
+              state.current.player.matrix.forEach((row, y) => row.forEach((v, x) => { 
+                  if (v) state.current.grid[y + state.current.player.pos.y][x + state.current.player.pos.x] = v; 
+              }));
+              resetPlayer();
+              sweep();
+            }
+            state.current.dropCounter = 0;
+          };
+
+          const sweep = () => {
+            let rowCount = 1;
+            let linesCleared = 0;
+            for (let y = state.current.grid.length - 1; y > 0; --y) {
+              if (state.current.grid[y].every(v => v !== 0)) {
+                const row = state.current.grid.splice(y, 1)[0].fill(0);
+                state.current.grid.unshift(row);
+                y++;
+                state.current.player.score += rowCount * 100;
+                rowCount *= 2;
+                linesCleared++;
+              }
+            }
+            
+            if (linesCleared > 0) {
+               recalculateSpeed();
+            }
+          };
+
+          const update = (time = 0) => {
+            if (!isActive || state.current.isGameOver) return;
+            const dt = time - state.current.lastTime;
+            state.current.lastTime = time;
+            state.current.dropCounter += dt;
+            if (state.current.dropCounter > state.current.dropInterval) drop();
+            draw();
+            requestAnimationFrame(update);
+          };
+
+          const draw = () => {
+            if (!canvasRef.current) return;
+            const ctx = canvasRef.current.getContext('2d');
+            ctx.fillStyle = '#0f172a'; ctx.fillRect(0,0,250,500);
+            
+            // 1. 畫出背景已固定的網格 Grid
+            state.current.grid.forEach((row, y) => row.forEach((v, x) => { 
+                if(v) { 
+                    ctx.fillStyle = COLORS[v]; 
+                    ctx.fillRect(x*25, y*25, 24, 24); 
+                    ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+                    ctx.strokeRect(x*25, y*25, 24, 24);
+                } 
+            }));
+
+            // 2. 計算並畫出落點預測 (Ghost Piece / Landing Path)
+            if (state.current.player.matrix) {
+                const ghostPlayer = {
+                    matrix: state.current.player.matrix,
+                    pos: { x: state.current.player.pos.x, y: state.current.player.pos.y }
+                };
+                
+                while (!collide(state.current.grid, ghostPlayer)) {
+                    ghostPlayer.pos.y++;
+                }
+                ghostPlayer.pos.y--; 
+
+                ctx.globalAlpha = 0.25;
+                state.current.player.matrix.forEach((row, y) => row.forEach((v, x) => { 
+                    if(v) { 
+                        ctx.fillStyle = COLORS[v]; 
+                        ctx.fillRect((ghostPlayer.pos.x+x)*25, (ghostPlayer.pos.y+y)*25, 24, 24); 
+                        ctx.strokeStyle = 'white';
+                        ctx.strokeRect((ghostPlayer.pos.x+x)*25, (ghostPlayer.pos.y+y)*25, 24, 24);
+                    } 
+                }));
+                ctx.globalAlpha = 1.0;
+            }
+            
+            // 3. 畫出當前正在控制的方塊 Current Piece
+            state.current.player.matrix?.forEach((row, y) => row.forEach((v, x) => { 
+                if(v) { 
+                    ctx.fillStyle = COLORS[v]; 
+                    ctx.fillRect((state.current.player.pos.x+x)*25, (state.current.player.pos.y+y)*25, 24, 24); 
+                    ctx.strokeStyle = 'white';
+                    ctx.strokeRect((state.current.player.pos.x+x)*25, (state.current.player.pos.y+y)*25, 24, 24);
+                } 
+            }));
+          };
+
+          React.useImperativeHandle(ref, () => ({
+            move: (d) => { state.current.player.pos.x += d; if(collide(state.current.grid, state.current.player)) state.current.player.pos.x -= d; draw(); },
+            rotate: () => { 
+                const m = state.current.player.matrix;
+                if (!m) return;
+                const rotated = m[0].map((_, i) => m.map(r => r[i])).map(r => r.reverse());
+                const oldPos = state.current.player.pos.x;
+                let offset = 1;
+                state.current.player.matrix = rotated;
+                while (collide(state.current.grid, state.current.player)) {
+                    state.current.player.pos.x += offset;
+                    offset = -(offset + (offset > 0 ? 1 : -1));
+                    if (Math.abs(offset) > m[0].length) {
+                        state.current.player.matrix = m;
+                        state.current.player.pos.x = oldPos;
+                        return;
+                    }
+                }
+                draw();
+            },
+            drop,
+            hardDrop: () => { 
+                if(state.current.isGameOver) return;
+                while(!collide(state.current.grid, state.current.player)) state.current.player.pos.y++; 
+                state.current.player.pos.y--; 
+                drop(); 
+            },
+            addScore: (points) => {
+                if (state.current.isGameOver) return;
+                state.current.player.score += points;
+                recalculateSpeed();
+            }
+          }));
+
+          useEffect(() => { 
+            resetPlayer(); 
+            const animId = requestAnimationFrame(update);
+            const si = setInterval(() => {
+                if (onUpdateRef.current) {
+                    onUpdateRef.current({
+                        grid: state.current.grid, 
+                        score: state.current.player.score, 
+                        isGameOver: state.current.isGameOver, 
+                        currentPiece: {matrix: state.current.player.matrix, pos: state.current.player.pos}
+                    });
+                }
+            }, 300);
+            return () => {
+                cancelAnimationFrame(animId);
+                clearInterval(si);
+            };
+          }, [isActive]);
+
+          return <canvas ref={canvasRef} width={250} height={500} className="bg-slate-900 rounded-lg shadow-2xl" />;
+        });
+
+        createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>
