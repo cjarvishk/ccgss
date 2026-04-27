@@ -467,11 +467,7 @@ const QUESTIONS = [
     let gameActive = false;
     let questionTimer = null;
 
-    const BROKERS = [
-      "wss://broker.emqx.io:8084/mqtt",
-      "wss://broker.hivemq.com:8884/mqtt"
-    ];
-    let currentBrokerIndex = 0;
+    const BROKER_URL = "wss://broker.emqx.io:8084/mqtt";
 
     function generateId(len = 4) {
       const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -494,60 +490,17 @@ const QUESTIONS = [
       else { dot.classList.remove('connected'); text.textContent = '離線'; }
     }
 
-    function connectMQTT(callback, retryIndex = 0) {
-      const idx = retryIndex || currentBrokerIndex;
-      const url = BROKERS[idx];
-      console.log('[MQTT] 嘗試連接:', url);
-      
-      // 清理舊連線
-      if (client) {
-        try { client.end(true); } catch(e) {}
-        client = null;
-      }
-      
-      client = mqtt.connect(url, {
+    function connectMQTT(callback) {
+      client = mqtt.connect(BROKER_URL, {
         clientId: "triviarun_" + generateId(8),
         clean: true,
-        connectTimeout: 8000,
         reconnectPeriod: 3000
       });
       updateStatus('connecting');
-      
-      client.on('connect', () => {
-        console.log('[MQTT] 連接成功:', url);
-        currentBrokerIndex = idx;
-        updateStatus('connected');
-        if (callback) callback();
-      });
-      
-      client.on('error', (err) => {
-        console.error('[MQTT] 錯誤:', err.message, url);
-        updateStatus('error');
-      });
-      
-      client.on('offline', () => {
-        console.warn('[MQTT] 離線:', url);
-        updateStatus('offline');
-      });
-      
-      // 自動 fallback：8秒內連唔到就試下一個 broker
-      let connected = false;
-      client.on('connect', () => { connected = true; });
-      
-      setTimeout(() => {
-        if (!connected && !client.connected) {
-          console.warn('[MQTT] 超時，嘗試下一個 broker...');
-          const nextIdx = (idx + 1) % BROKERS.length;
-          if (nextIdx !== idx) {
-            connectMQTT(callback, nextIdx);
-          } else {
-            updateStatus('離線');
-            if (document.getElementById('startPage').classList.contains('active')) {
-              showPage('errorPage');
-            }
-          }
-        }
-      }, 10000);
+      client.on('connect', () => { updateStatus('connected'); callback(); });
+      client.on('error', () => { updateStatus('error'); });
+      client.on('offline', () => { updateStatus('offline'); });
+      client.on('reconnect', () => { updateStatus('connected'); });
     }
 
     function publish(topic, payload) {
@@ -562,7 +515,9 @@ const QUESTIONS = [
       teams = {};
 
       connectMQTT(() => {
+        console.log('[Host] 準備訂閱:', gameId + '/#');
         client.subscribe(gameId + '/#', (err) => {
+          console.log('[Host] 訂閱結果:', err ? '❌ 失敗 ' + err : '✅ 成功');
           if (err) { showError('建立失敗'); return; }
           showHostConsole();
         });
