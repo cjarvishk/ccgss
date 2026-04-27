@@ -532,7 +532,6 @@ const QUESTIONS = [
     }
 
     function showHostConsole() {
-      document.getElementById('displayRoomCode').textContent = gameId;
       QRCode.toCanvas(document.getElementById('modalQrCode'), window.location.href.split('?')[0] + '?room=' + gameId, { width: 280, margin: 2 }, (err) => {});
       document.getElementById('modalRoomCode').textContent = gameId;
 
