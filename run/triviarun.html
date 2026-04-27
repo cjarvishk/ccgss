@@ -76,7 +76,7 @@
 
     .input-group { margin-bottom: 12px; }
     label { display: block; font-size: 0.875rem; color: var(--text-muted); margin-bottom: 4px; }
-    
+
     input {
       width: 100%;
       padding: 14px;
@@ -297,7 +297,8 @@
           <span id="statusText">離線</span>
         </div>
         <button class="header-btn" id="qrToggleBtn" onclick="showQRModal()" style="display:none;">📱 QR</button>
-        <button class="header-btn" onclick="resetGame()">🔄 重設</button>
+        <button class="header-btn" id="headerResetBtn" onclick="resetGame()" style="display:none">🔄 重設</button>
+        <button class="header-btn" id="qrModalBtn" onclick="showQRModal()">📱 二維碼</button>
       </div>
     </header>
 
@@ -305,9 +306,9 @@
       <div class="page active" id="startPage">
         <div class="player-main">
           <h1>團隊答題跑步賽</h1>
-          <p class="subtitle">回答問題，跑向終點！</p>
+          <p class="subtitle">回答問題,跑向終點!</p>
           <div class="button-group" style="margin-top:20px;">
-            <button class="btn btn-primary big-btn" onclick="hostGame()">主持人（顯示控制台）</button>
+            <button class="btn btn-primary big-btn" onclick="hostGame()">主持人(顯示控制台)</button>
             <button class="btn btn-secondary big-btn" onclick="showJoin()">加入遊戲</button>
           </div>
         </div>
@@ -316,18 +317,18 @@
       <div class="page" id="joinPage">
         <div class="player-main">
           <h1>選擇你的 iPAD</h1>
-          <p class="subtitle">2 台 iPad = 1 隊。選擇隊伍編號！</p>
-          
+          <p class="subtitle">2 台 iPad = 1 隊。選擇隊伍編號!</p>
+
           <div class="team-select" id="teamSelect"></div>
-          
+
           <div id="waitingForTeammate" class="waiting-team" style="display:none;">
             <div class="waiting-team-title" id="waitingTeamTitle">等待隊友...</div>
             <div class="waiting-team-names" id="waitingTeamNames"></div>
-            <div class="waiting-team-status">⏳ 等待隊友（第二台 iPad）...</div>
+            <div class="waiting-team-status">⏳ 等待隊友(第二台 iPad)...</div>
           </div>
-          
+
           <div id="teammateJoined" class="waiting-team" style="display:none;">
-            <div class="waiting-team-title">✓ 隊伍準備好了！</div>
+            <div class="waiting-team-title">✓ 隊伍準備好了!</div>
             <div class="waiting-team-names" id="teammateNames"></div>
             <p style="margin-top:16px;">等待主持人開始...</p>
           </div>
@@ -347,9 +348,8 @@
               <div class="team-count-bar" id="teamCountBar">0/8 隊伍已準備</div>
             </div>
           </div>
-          <div class="host-controls">
+          <div class="host-controls" id="hostControls">
             <button class="btn btn-primary big-btn" id="startGameBtn" onclick="startGame()">開始遊戲</button>
-            <button class="btn btn-secondary big-btn" onclick="resetGame()">重設遊戲</button>
           </div>
           <div class="right-panel">
             <div class="playground" id="playground"></div>
@@ -402,7 +402,7 @@
         <div class="player-main">
           <div style="text-align:center;padding:40px;">
             <div style="font-size:4rem;">🏆</div>
-            <h1 id="winnerTeam" style="margin-top:20px;">隊伍獲勝！</h1>
+            <h1 id="winnerTeam" style="margin-top:20px;">隊伍獲勝!</h1>
             <p class="subtitle" id="finalScore"></p>
           </div>
           <button class="btn btn-primary big-btn" onclick="showStart()">新遊戲</button>
@@ -420,36 +420,36 @@
 
   <script>
 const QUESTIONS = [
-      { q: "哪顆是紅色星球？", a: ["火星", "金星", "木星", "土星"], c: 0 },
-      { q: "最大的海洋？", a: ["太平洋", "大西洋", "印度洋", "北極海"], c: 0 },
-      { q: "蒙娜麗莎的作者？", a: ["達文西", "米開朗基羅", "拉斐爾", "多納太羅"], c: 0 },
-      { q: "金的元素符號？", a: ["Au", "Ag", "Go", "Gd"], c: 0 },
-      { q: "有幾個洲？", a: ["7", "5", "6", "8"], c: 0 },
-      { q: "法國的首都是？", a: ["巴黎", "倫敦", "柏林", "馬德里"], c: 0 },
-      { q: "植物吸收什麼？", a: ["二氧化碳", "氧氣", "氮氣", "氫氣"], c: 0 },
-      { q: "哈姆雷特的作者？", a: ["莎士比亞", "海明威", "奧斯汀", "狄更斯"], c: 0 },
-      { q: "最硬的物質？", a: ["鑽石", "鐵", "鈦", "石英"], c: 0 },
-      { q: "二戰何時結束？", a: ["1945", "1944", "1946", "1943"], c: 0 },
-      { q: "最小的質數？", a: ["2", "1", "3", "0"], c: 0 },
-      { q: "人口最多國家？", a: ["印度", "中國", "美國", "印尼"], c: 0 },
-      { q: "最大的哺乳類？", a: ["藍鯨", "大象", "長頸鹿", "河馬"], c: 0 },
-      { q: "六邊形有幾邊？", a: ["6", "5", "7", "8"], c: 0 },
-      { q: "最快的動物？", a: ["獵豹", "獅子", "馬", "瞪羚"], c: 0 },
-      { q: "原子序1？", a: ["氫", "氦", "氧", "碳"], c: 0 },
-      { q: "發現盤尼西林的人？", a: ["佛萊明", "居禮", "牛頓", "愛因斯坦"], c: 0 },
-      { q: "最長的河？", a: ["尼羅河", "亞馬遜河", "密西西比河", "長江"], c: 0 },
-      { q: "成年人有幾塊骨頭？", a: ["206", "208", "200", "210"], c: 0 },
-      { q: "日本首都是？", a: ["東京", "京都", "大阪", "首爾"], c: 0 },
-      { q: "第一個登上月球？", a: ["阿姆斯特朗", "奧德林", "加加林", "葛倫"], c: 0 },
-      { q: "最大的沙漠？", a: ["撒哈拉沙漠", "阿拉伯沙漠", "戈壁沙漠", "喀拉哈里沙漠"], c: 0 },
-      { q: "酪梨醬主要原料？", a: ["酪梨", "番茄", "萊姆", "洋蔥"], c: 0 },
-      { q: "吉他有幾根弦？", a: ["6", "4", "5", "7"], c: 0 },
-      { q: "三角形內角和？", a: ["180", "90", "360", "270"], c: 0 },
-      { q: "澳洲首都是？", a: ["坎培拉", "雪梨", "墨爾本", "珀斯"], c: 0 },
-      { q: "美國最大州？", a: ["阿拉斯加", "德州", "加州", "蒙大拿州"], c: 0 },
-      { q: "光速多少（萬）？", a: ["30", "15", "50", "20"], c: 0 },
-      { q: "水幾度沸騰(°C)？", a: ["100", "90", "110", "80"], c: 0 },
-      { q: "最近的恒星？", a: ["太陽", "比鄰星", "南門二", "天狼星"], c: 0 }
+      { q: "哪顆是紅色星球?", a: ["火星", "金星", "木星", "土星"], c: 0 },
+      { q: "最大的海洋?", a: ["太平洋", "大西洋", "印度洋", "北極海"], c: 0 },
+      { q: "蒙娜麗莎的作者?", a: ["達文西", "米開朗基羅", "拉斐爾", "多納太羅"], c: 0 },
+      { q: "金的元素符號?", a: ["Au", "Ag", "Go", "Gd"], c: 0 },
+      { q: "有幾個洲?", a: ["7", "5", "6", "8"], c: 0 },
+      { q: "法國的首都是?", a: ["巴黎", "倫敦", "柏林", "馬德里"], c: 0 },
+      { q: "植物吸收什麼?", a: ["二氧化碳", "氧氣", "氮氣", "氫氣"], c: 0 },
+      { q: "哈姆雷特的作者?", a: ["莎士比亞", "海明威", "奧斯汀", "狄更斯"], c: 0 },
+      { q: "最硬的物質?", a: ["鑽石", "鐵", "鈦", "石英"], c: 0 },
+      { q: "二戰何時結束?", a: ["1945", "1944", "1946", "1943"], c: 0 },
+      { q: "最小的質數?", a: ["2", "1", "3", "0"], c: 0 },
+      { q: "人口最多國家?", a: ["印度", "中國", "美國", "印尼"], c: 0 },
+      { q: "最大的哺乳類?", a: ["藍鯨", "大象", "長頸鹿", "河馬"], c: 0 },
+      { q: "六邊形有幾邊?", a: ["6", "5", "7", "8"], c: 0 },
+      { q: "最快的動物?", a: ["獵豹", "獅子", "馬", "瞪羚"], c: 0 },
+      { q: "原子序1?", a: ["氫", "氦", "氧", "碳"], c: 0 },
+      { q: "發現盤尼西林的人?", a: ["佛萊明", "居禮", "牛頓", "愛因斯坦"], c: 0 },
+      { q: "最長的河?", a: ["尼羅河", "亞馬遜河", "密西西比河", "長江"], c: 0 },
+      { q: "成年人有幾塊骨頭?", a: ["206", "208", "200", "210"], c: 0 },
+      { q: "日本首都是?", a: ["東京", "京都", "大阪", "首爾"], c: 0 },
+      { q: "第一個登上月球?", a: ["阿姆斯特朗", "奧德林", "加加林", "葛倫"], c: 0 },
+      { q: "最大的沙漠?", a: ["撒哈拉沙漠", "阿拉伯沙漠", "戈壁沙漠", "喀拉哈里沙漠"], c: 0 },
+      { q: "酪梨醬主要原料?", a: ["酪梨", "番茄", "萊姆", "洋蔥"], c: 0 },
+      { q: "吉他有幾根弦?", a: ["6", "4", "5", "7"], c: 0 },
+      { q: "三角形內角和?", a: ["180", "90", "360", "270"], c: 0 },
+      { q: "澳洲首都是?", a: ["坎培拉", "雪梨", "墨爾本", "珀斯"], c: 0 },
+      { q: "美國最大州?", a: ["阿拉斯加", "德州", "加州", "蒙大拿州"], c: 0 },
+      { q: "光速多少(萬)?", a: ["30", "15", "50", "20"], c: 0 },
+      { q: "水幾度沸騰(°C)?", a: ["100", "90", "110", "80"], c: 0 },
+      { q: "最近的恒星?", a: ["太陽", "比鄰星", "南門二", "天狼星"], c: 0 }
     ];
 
     const TEAM_COLORS = ['#ff6b6b', '#4ecdc4', '#ffe66d', '#95e1d3', '#f38181', '#aa96da', '#fcbad3', '#a8d8ea'];
@@ -537,17 +537,17 @@ const QUESTIONS = [
       document.getElementById('displayRoomCode').textContent = gameId;
       const url = window.location.href.split('?')[0] + '?room=' + gameId;
       QRCode.toCanvas(document.getElementById('qrCode'), url, { width: 300, margin: 2 }, (err) => {});
-      
+
       document.getElementById('qrToggleBtn').style.display = 'inline-block';
       updateTeamList();
       updateRunways();
       showPage('hostPage');
-      
+
       client.on('message', (topic, msg) => {
         try {
           const data = JSON.parse(msg.toString());
           const t = topic.split('/')[1];
-          
+
           if (t === 'join') {
             const tn = data.teamNum;
             if (tn >= 0 && tn < 8 && !teams[tn]) {
@@ -614,13 +614,12 @@ const QUESTIONS = [
         if (teams[i] && teams[i].ready) readyCount++;
       }
       if (readyCount === 0) {
-        alert('還沒有隊伍準備好！每隊需要 2 位玩家加入。');
+        alert('還沒有隊伍準備好!每隊需要 2 位玩家加入。');
         return;
       }
       gameActive = true;
-      document.getElementById('startGameBtn').disabled = true;
-      document.getElementById('hostInfoBox').classList.remove('show');
-      document.getElementById('toggleIcon').textContent = '▼';
+      document.getElementById('startGameBtn').style.display = 'none';
+      document.getElementById('qrContainer').style.display = 'none';
       nextQuestion();
     }
 
@@ -628,9 +627,9 @@ const QUESTIONS = [
       if (!gameActive) return;
       const q = QUESTIONS[Math.floor(Math.random() * QUESTIONS.length)];
       currentQuestion = q;
-      
+
       publish(gameId + '/question', { question: q, time: QUESTION_TIME, showAnswer: false });
-      
+
       let timeLeft = QUESTION_TIME;
       questionTimer = setInterval(() => {
         timeLeft--;
@@ -645,13 +644,13 @@ const QUESTIONS = [
       if (!currentQuestion) return;
       const correct = answer === currentQuestion.c;
       const steps = correct ? Math.floor(Math.random() * 5) + 1 : 0;
-      
+
       if (teams[teamNum]) {
         teams[teamNum].step = Math.min(teams[teamNum].step + steps, STEPS_TO_WIN);
-        
-        publish(gameId + '/progress', { 
-          teams: teams, 
-          lastTeam: teamNum, 
+
+        publish(gameId + '/progress', {
+          teams: teams,
+          lastTeam: teamNum,
           steps: steps,
           correct: correct,
           showAnswer: true
@@ -662,25 +661,25 @@ const QUESTIONS = [
     function showAnswer() {
       if (!currentQuestion) return;
       if (questionTimer) clearInterval(questionTimer);
-      
-      publish(gameId + '/question', { 
-        question: currentQuestion, 
+
+      publish(gameId + '/question', {
+        question: currentQuestion,
         time: 0,
-        showAnswer: true 
+        showAnswer: true
       });
-      
+
       setTimeout(() => { if (gameActive) nextQuestion(); }, 2000);
     }
 
     function updateRunways() {
       const container = document.getElementById('playground');
-      
+
       container.innerHTML = [0,1,2,3,4,5,6,7].map(i => {
         const team = teams[i];
         const pct = team ? (team.step / STEPS_TO_WIN) * 100 : 0;
         const name = team ? team.name : `TEAM ${i+1}`;
         const color = team ? team.color : TEAM_COLORS[i];
-        
+
         return `<div class="runway" style="border-left:4px solid ${color}">
           <div class="runway-team" style="color:${color}">${name}</div>
           <div class="runway-track">
@@ -698,8 +697,8 @@ const QUESTIONS = [
       if (winner) {
         gameActive = false;
         if (questionTimer) clearInterval(questionTimer);
-        document.getElementById('winnerTeam').textContent = `${winner.name} 獲勝！`;
-        document.getElementById('finalScore').textContent = `率先到達 100 步！`;
+        document.getElementById('winnerTeam').textContent = `${winner.name} 獲勝!`;
+        document.getElementById('finalScore').textContent = `率先到達 100 步!`;
         publish(gameId + '/winner', { winner: winner.name });
         showPage('winnerPage');
       }
@@ -710,6 +709,10 @@ const QUESTIONS = [
       gameActive = false;
       if (questionTimer) clearInterval(questionTimer);
       publish(gameId + '/teams', { type: 'update', teams: teams });
+      document.getElementById('startGameBtn').style.display = '';
+      document.getElementById('startGameBtn').disabled = true;
+      document.getElementById('qrContainer').style.display = '';
+      document.getElementById('hostControls').style.display = '';
       updateTeamList();
       updateRunways();
     }
@@ -731,7 +734,7 @@ const QUESTIONS = [
     function showTeamSelect() {
       const container = document.getElementById('teamSelect');
       container.innerHTML = '';
-      
+
       for (let i = 0; i < 8; i++) {
         const btn = document.createElement('button');
         btn.className = 'team-select-btn';
@@ -743,13 +746,13 @@ const QUESTIONS = [
     }
 
     function selectTeam(num) {
-      const name = prompt(`請輸入您的名字（第 ${num + 1} 隊）:`);
+      const name = prompt(`請輸入您的名字(第 ${num + 1} 隊):`);
       if (!name) return;
-      
+
       teamNum = num;
       playerName = name.trim();
       gameId = new URLSearchParams(window.location.search).get('room');
-      
+
       if (!gameId) {
         gameId = prompt("請輸入房間代碼:").trim().toUpperCase();
       }
@@ -757,26 +760,26 @@ const QUESTIONS = [
         alert("房間代碼無效");
         return;
       }
-      
+
       playerId = generateId(6);
-      
+
       connectMQTT(() => {
         client.subscribe(gameId + '/#', (err) => {
           if (err) { showError('加入失敗'); return; }
-          
+
           publish(gameId + '/join', {
             teamNum: teamNum,
             playerName: playerName
           });
-          
+
           showWaitingForTeammate();
         });
       });
-      
+
       client.on('message', (topic, msg) => {
         try {
           const data = JSON.parse(msg.toString());
-          
+
           if (data.teams) {
             const myTeam = data.teams[teamNum];
             if (myTeam) {
@@ -787,25 +790,30 @@ const QUESTIONS = [
               }
             }
           }
-          
+
           if (data.question) {
             currentQuestion = data.question;
             answered = false;
             document.getElementById('resultMsg').style.display = 'none';
             document.getElementById('correctAnswer').style.display = 'none';
-            
+
             if (data.showAnswer) {
               showPlayerAnswer();
               return;
             }
-            
+
+            if (data.time === 0) {
+              showPlayerAnswer();
+              return;
+            }
+
             document.getElementById('playerQuestionText').textContent = data.question.q;
-            
+
             const timerEl = document.getElementById('playerTimer');
             timerEl.style.display = 'block';
             timerEl.textContent = data.time;
             timerEl.className = 'countdown-timer';
-            
+
             const letters = ['A', 'B', 'C', 'D'];
             document.getElementById('playerAnswers').innerHTML = data.question.a.map((ans, i) => `
               <button class="answer-btn" onclick="submitAnswer(${i})" id="ans${i}">
@@ -813,7 +821,7 @@ const QUESTIONS = [
                 ${ans}
               </button>
             `).join('');
-            
+
             let timeLeft = data.time;
             const playerCountdown = setInterval(() => {
               timeLeft--;
@@ -822,13 +830,13 @@ const QUESTIONS = [
               else if (timeLeft <= 5) timerEl.className = 'countdown-timer warning';
               if (timeLeft <= 0) clearInterval(playerCountdown);
             }, 1000);
-            
+
             showPage('playerPage');
           }
-            
+
           if (data.winner) {
             gameActive = false;
-            document.getElementById('winnerTeam').textContent = `${data.winner} 獲勝！`;
+            document.getElementById('winnerTeam').textContent = `${data.winner} 獲勝!`;
             showPage('winnerPage');
           }
         } catch (e) { console.log('訊息錯誤:', e); }
@@ -839,10 +847,10 @@ const QUESTIONS = [
       document.getElementById('teamSelect').style.display = 'grid';
       document.getElementById('waitingForTeammate').style.display = 'none';
       document.getElementById('teammateJoined').style.display = 'none';
-      
+
       const btns = document.querySelectorAll('.team-select-btn');
       btns.forEach(b => b.classList.add('taken'));
-      
+
       if (team) {
         document.getElementById('waitingTeamTitle').textContent = team.name;
         document.getElementById('waitingTeamNames').textContent = "📱 " + team.player1;
@@ -854,7 +862,7 @@ const QUESTIONS = [
           </button>
         `;
       }
-      
+
       showPage('joinPage');
     }
 
@@ -862,49 +870,51 @@ const QUESTIONS = [
       document.getElementById('teamSelect').style.display = 'none';
       document.getElementById('waitingForTeammate').style.display = 'none';
       document.getElementById('teammateJoined').style.display = 'block';
-      
+
       document.getElementById('teammateNames').textContent = "📱 " + team.player1 + " + " + team.player2;
       document.getElementById('myTeamNum').textContent = teamNum + 1;
-      
+
       showPage('waitingPage');
     }
 
     function submitAnswer(index) {
       if (answered || !currentQuestion) return;
       answered = true;
-      
+
       document.querySelectorAll('.answer-btn').forEach(btn => btn.disabled = true);
       document.getElementById('ans' + index).classList.add('selected');
-      
+
       publish(gameId + '/answer', {
         teamNum: teamNum,
         answer: index
       });
-      
+
+      // 立即顯示結果，不用等 host 廣播
+      showPlayerAnswer();
       showPage('waitingPage');
     }
-
+    
     function showPlayerAnswer() {
       const correct = currentQuestion.c;
-      
+
       document.querySelectorAll('.answer-btn').forEach((btn, i) => {
         if (i === correct) btn.classList.add('correct');
       });
-      
+
       const selected = document.querySelector('.answer-btn.selected');
       if (selected && !selected.classList.contains('correct')) {
         selected.classList.add('incorrect');
       }
-      
+
       const isCorrect = selected && selected.classList.contains('correct');
       const resultMsg = document.getElementById('resultMsg');
-      resultMsg.textContent = isCorrect ? `+${Math.floor(Math.random() * 5) + 1} 步！` : '再試一次！';
+      resultMsg.textContent = isCorrect ? `+${Math.floor(Math.random() * 5) + 1} 步!` : '再試一次!';
       resultMsg.className = isCorrect ? 'result-correct' : 'result-wrong';
       resultMsg.style.display = 'block';
-      
+
       document.getElementById('correctAnswerText').textContent = currentQuestion.a[correct];
       document.getElementById('correctAnswer').style.display = 'block';
-      
+
       showPage('playerPage');
     }
 
