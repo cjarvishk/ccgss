@@ -318,7 +318,7 @@
       <div class="page" id="joinPage">
         <div class="player-main">
           <h1>選擇你的 iPAD</h1>
-          <p class="subtitle">2 台 iPad = 1 隊。選擇隊伍編號!</p>
+          <p class="subtitle">2 台 iPad = 1 隊，或單人成隊！選擇隊伍編號。</p>
 
           <div class="team-select" id="teamSelect"></div>
 
@@ -326,6 +326,7 @@
             <div class="waiting-team-title" id="waitingTeamTitle">等待隊友...</div>
             <div class="waiting-team-names" id="waitingTeamNames"></div>
             <div class="waiting-team-status">⏳ 等待隊友(第二台 iPad)...</div>
+            <button id="soloBtn" onclick="goSolo()" style="margin-top:16px;padding:12px 32px;font-size:1rem;background:var(--primary);color:#fff;border:none;border-radius:8px;cursor:pointer;">🏃 單人成隊</button>
           </div>
 
           <div id="teammateJoined" class="waiting-team" style="display:none;">
@@ -608,12 +609,13 @@ const QUESTIONS = [
                 player2: "",
                 step: 0,
                 color: TEAM_COLORS[tn],
-                ready: false,
+                ready: !!data.solo, // 單人成隊直接 ready
+                solo: !!data.solo,
                 questions: null,
                 qIndex: 0,
                 questionTimer: null
               };
-            } else if (tn >= 0 && tn < 8 && teams[tn] && !teams[tn].player2) {
+            } else if (tn >= 0 && tn < 8 && teams[tn] && !teams[tn].player2 && !teams[tn].solo) {
               teams[tn].player2 = data.playerName;
               teams[tn].ready = true;
             }
@@ -645,11 +647,20 @@ const QUESTIONS = [
           </div>`;
           readyCount++;
         } else if (team && team.player1) {
-          html += `<div class="team-item waiting" style="border-left-color:${team.color}">
-            <div class="team-item-name" style="color:${team.color}">${team.name}</div>
-            <div class="team-item-players">📱 ${team.player1}</div>
-            <div class="team-item-status waiting">⏳ 等待隊友中...</div>
-          </div>`;
+          if (team.solo) {
+            html += `<div class="team-item filled" style="border-left-color:${team.color}">
+              <div class="team-item-name" style="color:${team.color}">${team.name}</div>
+              <div class="team-item-players">📱 ${team.player1} 🏃單人</div>
+              <div class="team-item-status ready">✓ 已準備（單人）</div>
+            </div>`;
+            readyCount++;
+          } else {
+            html += `<div class="team-item waiting" style="border-left-color:${team.color}">
+              <div class="team-item-name" style="color:${team.color}">${team.name}</div>
+              <div class="team-item-players">📱 ${team.player1}</div>
+              <div class="team-item-status waiting">⏳ 等待隊友中...</div>
+            </div>`;
+          }
         } else {
           html += `<div class="team-item empty"><div class="team-item-name">${TEAM_NAMES[i]}</div><div class="team-item-status">空位</div></div>`;
         }
@@ -667,7 +678,7 @@ const QUESTIONS = [
         if (teams[i] && teams[i].ready) readyCount++;
       }
       if (readyCount === 0) {
-        alert('還沒有隊伍準備好!每隊需要 2 位玩家加入。');
+        alert('還沒有隊伍準備好！加入隊伍後按「單人成隊」或等隊友加入。');
         return;
       }
       gameActive = true;
@@ -1178,6 +1189,21 @@ const QUESTIONS = [
       });
     }
 
+    function goSolo() {
+      // 單人成隊：通知 Host 設為 solo
+      publish(gameId + '/join', {
+        teamNum: teamNum,
+        playerName: playerName,
+        solo: true
+      });
+      // 直接顯示已準備
+      document.getElementById('waitingForTeammate').style.display = 'none';
+      document.getElementById('teammateJoined').style.display = 'block';
+      document.getElementById('teammateNames').textContent = "🏃 " + playerName + "（單人）";
+      document.getElementById('myTeamNum').textContent = teamNum + 1;
+      showPage('waitingPage');
+    }
+
     function showWaitingForTeammate(team) {
       document.getElementById('teamSelect').style.display = 'grid';
       document.getElementById('waitingForTeammate').style.display = 'none';
@@ -1186,7 +1212,15 @@ const QUESTIONS = [
       const btns = document.querySelectorAll('.team-select-btn');
       btns.forEach(b => b.classList.add('taken'));
 
-      if (team) {
+      if (team && team.solo) {
+        // 單人成隊：直接顯示已準備
+        document.getElementById('teamSelect').style.display = 'none';
+        document.getElementById('waitingForTeammate').style.display = 'none';
+        document.getElementById('teammateJoined').style.display = 'block';
+        document.getElementById('teammateNames').textContent = "🏃 " + team.player1 + "（單人）";
+        document.getElementById('myTeamNum').textContent = teamNum + 1;
+        showPage('waitingPage');
+      } else if (team) {
         document.getElementById('waitingTeamTitle').textContent = team.name;
         document.getElementById('waitingTeamNames').textContent = "📱 " + team.player1;
         document.getElementById('waitingForTeammate').style.display = 'block';
@@ -1206,7 +1240,11 @@ const QUESTIONS = [
       document.getElementById('waitingForTeammate').style.display = 'none';
       document.getElementById('teammateJoined').style.display = 'block';
 
-      document.getElementById('teammateNames').textContent = "📱 " + team.player1 + " + " + team.player2;
+      if (team && team.solo) {
+        document.getElementById('teammateNames').textContent = "🏃 " + team.player1 + "（單人）";
+      } else {
+        document.getElementById('teammateNames').textContent = "📱 " + team.player1 + " + " + team.player2;
+      }
       document.getElementById('myTeamNum').textContent = teamNum + 1;
 
       showPage('waitingPage');
