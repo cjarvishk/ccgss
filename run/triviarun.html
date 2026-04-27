@@ -296,9 +296,9 @@
           <div class="status-dot" id="statusDot"></div>
           <span id="statusText">離線</span>
         </div>
-        <button class="header-btn" id="qrToggleBtn" onclick="showQRModal()" style="display:none;">📱 QR</button>
-        <button class="header-btn" id="headerResetBtn" onclick="resetGame()" style="display:none">🔄 重設</button>
+        <button class="header-btn" id="headerStartBtn" onclick="startGame()" style="display:none">▶ 開始</button>
         <button class="header-btn" id="qrModalBtn" onclick="showQRModal()">📱 二維碼</button>
+        <button class="header-btn" id="headerResetBtn" onclick="resetGame()" style="display:none">🔄 重設</button>
       </div>
     </header>
 
@@ -338,11 +338,7 @@
       <div class="page" id="hostPage">
         <div class="host-console active">
           <div class="host-top-section">
-            <div id="qrContainer" class="host-qr-section">
-              <canvas id="qrCode"></canvas>
-              <div class="room-code-display" id="displayRoomCode"></div>
-              <p class="host-qr-hint">📱 請用平板掃描 QR Code 加入遊戲</p>
-            </div>
+
             <div class="host-teams-section">
               <div class="team-list" id="teamList"></div>
               <div class="team-count-bar" id="teamCountBar">0/8 隊伍已準備</div>
@@ -535,10 +531,12 @@ const QUESTIONS = [
 
     function showHostConsole() {
       document.getElementById('displayRoomCode').textContent = gameId;
-      const url = window.location.href.split('?')[0] + '?room=' + gameId;
-      QRCode.toCanvas(document.getElementById('qrCode'), url, { width: 300, margin: 2 }, (err) => {});
+      QRCode.toCanvas(document.getElementById('modalQrCode'), window.location.href.split('?')[0] + '?room=' + gameId, { width: 280, margin: 2 }, (err) => {});
+      document.getElementById('modalRoomCode').textContent = gameId;
 
-      document.getElementById('qrToggleBtn').style.display = 'inline-block';
+      document.getElementById('headerStartBtn').style.display = 'inline-block';
+      document.getElementById('headerResetBtn').style.display = 'inline-block';
+      document.getElementById('qrModalBtn').style.display = 'inline-block';
       updateTeamList();
       updateRunways();
       showPage('hostPage');
@@ -618,8 +616,9 @@ const QUESTIONS = [
         return;
       }
       gameActive = true;
-      document.getElementById('startGameBtn').style.display = 'none';
-      document.getElementById('qrContainer').style.display = 'none';
+      document.getElementById('headerStartBtn').style.display = 'none';
+      document.getElementById('headerResetBtn').style.display = 'inline-block';
+      document.getElementById('qrModalBtn').style.display = 'inline-block';
       nextQuestion();
     }
 
