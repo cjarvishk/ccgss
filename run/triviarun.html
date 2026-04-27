@@ -782,7 +782,7 @@ const QUESTIONS = [
           <div style="font-size:6rem;margin-bottom:16px;">⏱️</div>
           <h1 style="color:var(--warning);font-size:2.5rem;margin-bottom:12px;">時間到！</h1>
           <p style="color:var(--text-muted);margin-bottom:24px;">沒有隊伍到達終點</p>
-          <button class="btn btn-primary" onclick="closeVictoryModal()" style="font-size:1.2rem;padding:16px 32px;">再玩一次</button>
+          <button class="btn btn-primary" onclick="startNewRound()" style="font-size:1.2rem;padding:16px 32px;">🔄 新一局（同房號）</button>
         </div>`;
         document.body.appendChild(modal);
         publish(gameId + '/winner', { winner: null });
@@ -939,7 +939,7 @@ const QUESTIONS = [
           <div style="margin-bottom:20px;text-align:left;background:var(--bg-secondary);border-radius:8px;padding:8px;">
             ${resultsHTML}
           </div>
-          <button class="btn btn-primary" onclick="closeVictoryModal()" style="font-size:1.2rem;padding:16px 32px;">再玩一次</button>
+          <button class="btn btn-primary" onclick="startNewRound()" style="font-size:1.2rem;padding:16px 32px;">🔄 新一局（同房號）</button>
         </div>
       `;
       document.body.appendChild(modal);
@@ -950,6 +950,39 @@ const QUESTIONS = [
       const modal = document.getElementById('victoryModal');
       if (modal) modal.remove();
       showPage('winnerPage');
+    }
+
+    function startNewRound() {
+      // 新一局：保留隊伍，重置步數和狀態
+      Object.keys(teams).forEach(teamNum => {
+        if (teams[teamNum]) {
+          teams[teamNum].step = 0;
+          teams[teamNum].progress = 0;
+          teams[teamNum].qIndex = 0;
+          if (teams[teamNum].questionTimer) clearInterval(teams[teamNum].questionTimer);
+        }
+      });
+      // 重置全局計時器
+      gameTimeLeft = GAME_TIME;
+      if (gameTimer) clearInterval(gameTimer);
+      gameTimer = null;
+      const timerEl = document.getElementById('gameTimerDisplay');
+      if (timerEl) { timerEl.style.opacity = '0'; timerEl.textContent = ''; }
+      // 廣播新一局訊息
+      publish(gameId + '/newround', { type: 'newround' });
+      // 隱藏勝利彈窗
+      const modal = document.getElementById('victoryModal');
+      if (modal) modal.remove();
+      // 重設遊戲狀態
+      gameActive = false;
+      // 顯示開始按鈕
+      document.getElementById('startGameBtn').style.display = '';
+      document.getElementById('startGameBtn').disabled = false;
+      document.getElementById('qrContainer').style.display = '';
+      document.getElementById('hostControls').style.display = '';
+      // 更新跑道和隊伍列表
+      updateTeamList();
+      updateRunways();
     }
 
     function resetGame() {
