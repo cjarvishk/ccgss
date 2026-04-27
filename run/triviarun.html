@@ -344,7 +344,7 @@
               <div class="team-count-bar" id="teamCountBar">0/8 隊伍已準備</div>
             </div>
           </div>
-          <div class="host-controls" id="hostControls">
+          <div class="host-controls" id="hostControls" style="display:none;">
             <button class="btn btn-primary big-btn" id="startGameBtn" onclick="startGame()">開始遊戲</button>
           </div>
           <div class="right-panel">
@@ -656,6 +656,11 @@ const QUESTIONS = [
           showAnswer: true
         });
       }
+
+      // 所有隊伍答完後，2秒顯示答案，然後下一題
+      // 簡化版：收到答案就觸發 showAnswer
+      if (questionTimer) clearInterval(questionTimer);
+      setTimeout(() => { showAnswer(); }, 100); // 短延遲確保 progress 先送出
     }
 
     function showAnswer() {
