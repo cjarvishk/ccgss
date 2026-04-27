@@ -348,6 +348,7 @@
             <button class="btn btn-primary big-btn" id="startGameBtn" onclick="startGame()">開始遊戲</button>
           </div>
           <div class="right-panel">
+            <div id="leaderboard" style="margin-bottom:8px;"></div>
             <div class="playground" id="playground"></div>
           </div>
         </div>
@@ -455,6 +456,15 @@ const QUESTIONS = [
     const QUESTION_TIME = 12;
     const GAME_TIME = 180; // 3 minutes
 
+    function shuffleQuestions(arr) {
+      const a = [...arr];
+      for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    }
+
     let client = null;
     let gameId = null;
     let playerId = null;
@@ -470,8 +480,44 @@ const QUESTIONS = [
     let autoMoveTimer = null;
     let gameTimer = null;
     let gameTimeLeft = GAME_TIME;
+    let playerCountdown = null; // Player 端倒數計時器（全域，防止多個 interval 亂跳）
 
     const BROKER_URL = "wss://broker.emqx.io:8084/mqtt";
+
+    // 音效系統（Web Audio API）
+    let audioCtx = null;
+    function initAudio() { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+    function playSound(type) {
+      if (!audioCtx) return;
+      try {
+        if (type === 'correct') {
+          [523, 659, 784].forEach((freq, i) => {
+            const o = audioCtx.createOscillator(); const g = audioCtx.createGain();
+            o.connect(g); g.connect(audioCtx.destination);
+            o.frequency.value = freq; o.type = 'sine';
+            g.gain.setValueAtTime(0.2, audioCtx.currentTime + i*0.1);
+            g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + i*0.1 + 0.2);
+            o.start(audioCtx.currentTime + i*0.1); o.stop(audioCtx.currentTime + i*0.1 + 0.2);
+          });
+        } else if (type === 'wrong') {
+          const o = audioCtx.createOscillator(); const g = audioCtx.createGain();
+          o.connect(g); g.connect(audioCtx.destination);
+          o.frequency.value = 200; o.type = 'sawtooth';
+          g.gain.setValueAtTime(0.15, audioCtx.currentTime);
+          g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+          o.start(audioCtx.currentTime); o.stop(audioCtx.currentTime + 0.3);
+        } else if (type === 'victory') {
+          [523, 659, 784, 1047].forEach((freq, i) => {
+            const o = audioCtx.createOscillator(); const g = audioCtx.createGain();
+            o.connect(g); g.connect(audioCtx.destination);
+            o.frequency.value = freq; o.type = 'sine';
+            g.gain.setValueAtTime(0.25, audioCtx.currentTime + i*0.15);
+            g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + i*0.15 + 0.3);
+            o.start(audioCtx.currentTime + i*0.15); o.stop(audioCtx.currentTime + i*0.15 + 0.3);
+          });
+        }
+      } catch(e) {}
+    }
 
     function generateId(len = 4) {
       const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -514,6 +560,7 @@ const QUESTIONS = [
     }
 
     function hostGame() {
+      initAudio();
       isHost = true;
       gameId = generateId(4);
       teams = {};
@@ -561,7 +608,10 @@ const QUESTIONS = [
                 player2: "",
                 step: 0,
                 color: TEAM_COLORS[tn],
-                ready: false
+                ready: false,
+                questions: null,
+                qIndex: 0,
+                questionTimer: null
               };
             } else if (tn >= 0 && tn < 8 && teams[tn] && !teams[tn].player2) {
               teams[tn].player2 = data.playerName;
@@ -571,11 +621,11 @@ const QUESTIONS = [
             updateTeamList();
             updateRunways();
           } else if (t === 'answer') {
-            handleTeamAnswer(data.teamNum, data.answer);
+            const parts = topic.split('/');
+            const answerTeamNum = parts.length >= 3 ? parseInt(parts[2]) : data.teamNum;
+            handleTeamAnswer(answerTeamNum, data.answer);
           } else if (t === 'progress') {
-            teams = data.teams;
-            updateRunways();
-            checkWinner();
+            // 忽略舊式 progress（來自其他訊息格式）
           }
         } catch (e) { console.log('主持人訊息錯誤:', e); }
       });
@@ -624,21 +674,70 @@ const QUESTIONS = [
       document.getElementById('headerStartBtn').style.display = 'none';
       document.getElementById('headerResetBtn').style.display = 'inline-block';
       document.getElementById('qrModalBtn').style.display = 'inline-block';
+      // 生成每隊試卷
+      for (let i = 0; i < 8; i++) {
+        if (teams[i] && teams[i].ready) {
+          teams[i].questions = shuffleQuestions(QUESTIONS);
+          teams[i].qIndex = 0;
+        }
+      }
       // 開始自動前行
       startAutoMove();
       // 開始3分鐘倒數
       startGameTimer();
-      nextQuestion();
+      // 向所有已準備的隊伍派發第一題
+      for (let i = 0; i < 8; i++) {
+        if (teams[i] && teams[i].ready) {
+          sendNextQuestion(i);
+        }
+      }
+    }
+
+    function sendNextQuestion(teamNum) {
+      if (!gameActive || !teams[teamNum]) return;
+      const team = teams[teamNum];
+      if (!team.questions || team.qIndex >= team.questions.length) return;
+
+      const q = team.questions[team.qIndex];
+      team.currentQuestion = q;
+      publish(gameId + '/question/' + teamNum, { question: q, time: QUESTION_TIME });
+
+      if (team.questionTimer) clearInterval(team.questionTimer);
+      team.timeLeft = QUESTION_TIME;
+      team.questionTimer = setInterval(() => {
+        team.timeLeft--;
+        if (team.timeLeft <= 0) {
+          clearInterval(team.questionTimer);
+          // 超時：視為答錯，向後退
+          const penalty = -(Math.floor(Math.random() * 3) + 1);
+          team.step = Math.max(team.step + penalty, 0);
+          // 通知所有 clients 更新跑道
+          publish(gameId + '/progress', {
+            teams: teams, lastTeam: teamNum, steps: Math.abs(penalty),
+            moveMsg: penalty + '', correct: false, showAnswer: true
+          });
+          // 通知該 team 的 player：顯示正確答案（超時）
+          publish(gameId + '/question/' + teamNum, {
+            question: q, time: 0, showAnswer: true, timeout: true
+          });
+          updateRunways();
+          checkWinner();
+          // 下一題
+          setTimeout(() => { team.qIndex++; sendNextQuestion(teamNum); }, 2000);
+        }
+      }, 1000);
     }
 
     function startGameTimer() {
       gameTimeLeft = GAME_TIME;
       updateGameTimerDisplay();
       gameTimer = setInterval(() => {
-        gameTimeLeft--;
-        updateGameTimerDisplay();
-        if (gameTimeLeft <= 0) {
-          endGameByTime();
+        if (gameTimeLeft > 0) {
+          gameTimeLeft--;
+          updateGameTimerDisplay();
+          if (gameTimeLeft <= 0) {
+            endGameByTime();
+          }
         }
       }, 1000);
     }
@@ -674,7 +773,7 @@ const QUESTIONS = [
 
       if (winner) {
         showVictoryModal(winner, `時間到！🏆 冠軍（${maxStep} 步）`);
-        publish(gameId + '/winner', { winner: winner.name, maxStep: maxStep });
+        publish(gameId + '/winner', { winner: winner.name, maxStep: maxStep, teams: teams });
       } else {
         const modal = document.createElement('div');
         modal.className = 'modal-overlay';
@@ -709,56 +808,61 @@ const QUESTIONS = [
       }, 1000);
     }
 
-    function nextQuestion() {
-      if (!gameActive) return;
-      const q = QUESTIONS[Math.floor(Math.random() * QUESTIONS.length)];
-      currentQuestion = q;
-
-      publish(gameId + '/question', { question: q, time: QUESTION_TIME, showAnswer: false });
-
-      let timeLeft = QUESTION_TIME;
-      questionTimer = setInterval(() => {
-        timeLeft--;
-        if (timeLeft <= 0) {
-          clearInterval(questionTimer);
-          showAnswer();
-        }
-      }, 1000);
-    }
-
     function handleTeamAnswer(teamNum, answer) {
-      if (!currentQuestion) return;
-      const correct = answer === currentQuestion.c;
+      const team = teams[teamNum];
+      if (!team || !team.currentQuestion) return;
+
+      if (team.questionTimer) clearInterval(team.questionTimer);
+
+      const correct = answer === team.currentQuestion.c;
       let steps = 0;
       let moveMsg = '';
 
       if (correct) {
-        // 答對：前進1-5格
-        steps = Math.floor(Math.random() * 5) + 1;
-        moveMsg = `+${steps}`;
+        // Q3 速度加成制：答啱愈快，獎勵愈多
+        const timeUsed = QUESTION_TIME - (team.timeLeft || 0);
+        steps = Math.max(1, 6 - Math.ceil(timeUsed / 2));
+        moveMsg = '+' + steps + (steps >= 4 ? ' ⚡' : '');
+        team.step = Math.min(team.step + steps, STEPS_TO_WIN);
+        playSound('correct');
       } else {
-        // 答錯：後退1-3格（懲罰機制）
         steps = -(Math.floor(Math.random() * 3) + 1);
-        teams[teamNum].step = Math.max(teams[teamNum].step + steps, 0);
-        moveMsg = `${steps}`;
+        moveMsg = steps + '';
+        team.step = Math.max(team.step + steps, 0);
+        playSound('wrong');
       }
 
-      if (teams[teamNum] && correct) {
-        teams[teamNum].step = Math.min(teams[teamNum].step + steps, STEPS_TO_WIN);
-      }
-
+      // 通知所有 clients 更新跑道
       publish(gameId + '/progress', {
-        teams: teams,
-        lastTeam: teamNum,
-        steps: Math.abs(steps),
-        moveMsg: moveMsg,
-        correct: correct,
-        showAnswer: true
+        teams: teams, lastTeam: teamNum, steps: Math.abs(steps),
+        moveMsg: moveMsg, correct: correct, showAnswer: true,
+        playerAnswer: answer, correctAnswer: team.currentQuestion.c
       });
+      // 通知該 team 的 player：顯示正確答案 + 速度加成
+      publish(gameId + '/question/' + teamNum, {
+        question: team.currentQuestion, time: 0, showAnswer: true, correct: correct,
+        speedBonus: correct ? steps - 1 : 0, stepsGained: correct ? steps : 0
+      });
+      updateRunways();
+      checkWinner();
 
-      // 所有隊伍答完後，2秒顯示答案，然後下一題
-      if (questionTimer) clearInterval(questionTimer);
-      setTimeout(() => { showAnswer(); }, 100);
+      // 派下一題
+      team.qIndex++;
+      setTimeout(() => sendNextQuestion(teamNum), 1500);
+    }
+
+    function nextQuestion() { } // 保留但停用，改為 per-team
+
+    function updateLeaderboard() {
+      const el = document.getElementById('leaderboard');
+      if (!el) return;
+      const ranked = Object.values(teams).filter(t => t && t.ready).sort((a, b) => b.step - a.step);
+      if (ranked.length === 0) { el.innerHTML = ''; return; }
+      el.innerHTML = '<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center;">' +
+        ranked.map((t, i) => `<div style="background:${t.color}22;border:2px solid ${t.color};border-radius:8px;padding:4px 10px;font-size:0.8rem;min-width:60px;text-align:center;">
+          <div style="font-weight:bold;color:${t.color};">${i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '#'+(i+1)}</div>
+          <div style="color:var(--text-primary);">${t.step}步</div>
+        </div>`).join('') + '</div>';
     }
 
     function showAnswer() {
@@ -793,6 +897,8 @@ const QUESTIONS = [
           <div class="runway-info">${team ? team.step + '/100' : '-/100'}</div>
         </div>`;
       }).join('');
+
+      updateLeaderboard();
     }
 
     function checkWinner() {
@@ -815,19 +921,29 @@ const QUESTIONS = [
       modal.className = 'modal-overlay';
       modal.style.display = 'flex';
       const subtitle = customSubtitle || '率先到達 100 步!';
+      // 結算排行榜
+      const ranked = Object.values(teams).filter(t => t && t.ready).sort((a, b) => b.step - a.step);
+      const resultsHTML = ranked.map((t, i) => `
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 12px;${i === 0 ? 'background:'+t.color+'22;border-radius:6px;' : ''}">
+          <span style="font-size:1.2rem;">${i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : (i+1)+'.'}</span>
+          <span style="color:${t.color};font-weight:bold;flex:1;text-align:left;">${t.name}</span>
+          <span style="font-weight:bold;">${t.step} 步</span>
+        </div>
+      `).join('');
       modal.innerHTML = `
         <div class="modal-content" style="text-align:center;max-width:500px;">
           <div style="font-size:6rem;margin-bottom:16px;">🏆</div>
           <h1 style="color:${winner.color};font-size:2.5rem;margin-bottom:12px;">${winner.name}</h1>
           <h2 style="color:var(--success);margin-bottom:16px;">冠軍!</h2>
-          <p style="color:var(--text-muted);margin-bottom:24px;">${subtitle}</p>
-          <p style="font-size:1.1rem;margin-bottom:24px;">
-            📱 ${winner.player1}<br>📱 ${winner.player2}
-          </p>
+          <p style="color:var(--text-muted);margin-bottom:16px;">${subtitle}</p>
+          <div style="margin-bottom:20px;text-align:left;background:var(--bg-secondary);border-radius:8px;padding:8px;">
+            ${resultsHTML}
+          </div>
           <button class="btn btn-primary" onclick="closeVictoryModal()" style="font-size:1.2rem;padding:16px 32px;">再玩一次</button>
         </div>
       `;
       document.body.appendChild(modal);
+      playSound('victory');
     }
 
     function closeVictoryModal() {
@@ -842,6 +958,10 @@ const QUESTIONS = [
       if (questionTimer) clearInterval(questionTimer);
       if (autoMoveTimer) clearInterval(autoMoveTimer);
       if (gameTimer) clearInterval(gameTimer);
+      gameTimer = null;
+      gameTimeLeft = GAME_TIME;
+      const timerEl = document.getElementById('gameTimerDisplay');
+      if (timerEl) { timerEl.style.opacity = '0'; }
       // 清除勝利彈窗
       const victoryModal = document.getElementById('victoryModal');
       if (victoryModal) victoryModal.remove();
@@ -899,7 +1019,7 @@ const QUESTIONS = [
       }
 
       playerId = generateId(6);
-
+      initAudio();
       connectMQTT(() => {
         client.subscribe(gameId + '/#', (err) => {
           if (err) { showError('加入失敗'); return; }
@@ -908,16 +1028,30 @@ const QUESTIONS = [
             teamNum: teamNum,
             playerName: playerName
           });
+          // 已透過 gameId/# 訂閱所有 topic，唔需要再單獨訂閱
+          // （重複訂閱會導致收到兩次相同訊息，造成計時器/顯示異常）
 
           showWaitingForTeammate();
         });
       });
 
+      // 訊息去重：防止重複處理同一條 MQTT 訊息
+      let lastMsgId = '';
+
       client.on('message', (topic, msg) => {
         try {
-          const data = JSON.parse(msg.toString());
+          const msgStr = msg.toString();
+          const msgId = topic + ':' + msgStr.substring(0, 50);
+          if (msgId === lastMsgId) { console.log('[Player] 去重：跳過重複訊息', topic); return; }
+          lastMsgId = msgId;
 
-          if (data.teams) {
+          const data = JSON.parse(msgStr);
+          const topicParts = topic.split('/');
+          const subTopic = topicParts[1];
+
+          // 只處理隊伍加入/更新訊息（data.type === 'update'）
+          // 進度訊息（autoMove/progress）帶 data.teams 但唔應該觸發頁面切換！
+          if (data.teams && data.type === 'update') {
             const myTeam = data.teams[teamNum];
             if (myTeam) {
               if (myTeam.player2) {
@@ -927,22 +1061,33 @@ const QUESTIONS = [
               }
             }
           }
+          // 處理進度更新（只更新步數，唔切換頁面）
+          if (data.teams && (data.progress || data.autoMove || data.lastTeam !== undefined)) {
+            const myTeam = data.teams[teamNum];
+            if (myTeam) {
+              myTeamStep = myTeam.step;
+              document.getElementById('myStep').textContent = myTeamStep;
+            }
+          }
 
-          if (data.question) {
+          // 只處理自己隊伍嘅題目（過濾其他隊嘅題目訊息）
+          if (data.question && subTopic === 'question') {
+            const targetTeam = topicParts.length >= 3 ? parseInt(topicParts[2]) : -1;
+            if (targetTeam !== teamNum && targetTeam !== -1) {
+              console.log('[Player] 跳過其他隊題目：', topic);
+              return;
+            }
+
+            // 如果是 showAnswer 通知，顯示結果
+            if (data.showAnswer) {
+              showPlayerAnswerResult(data.correct, data.timeout, data.speedBonus, data.stepsGained);
+              return;
+            }
+            // 否則是新題目
             currentQuestion = data.question;
             answered = false;
             document.getElementById('resultMsg').style.display = 'none';
             document.getElementById('correctAnswer').style.display = 'none';
-
-            if (data.showAnswer) {
-              showPlayerAnswer();
-              return;
-            }
-
-            if (data.time === 0) {
-              showPlayerAnswer();
-              return;
-            }
 
             document.getElementById('playerQuestionText').textContent = data.question.q;
 
@@ -959,22 +1104,42 @@ const QUESTIONS = [
               </button>
             `).join('');
 
+            // 清走舊計時器，防止多個 interval 同時跑
+            if (playerCountdown) { clearInterval(playerCountdown); playerCountdown = null; }
+
             let timeLeft = data.time;
-            const playerCountdown = setInterval(() => {
+            playerCountdown = setInterval(() => {
               timeLeft--;
               timerEl.textContent = timeLeft;
               if (timeLeft <= 3) timerEl.className = 'countdown-timer danger';
               else if (timeLeft <= 5) timerEl.className = 'countdown-timer warning';
-              if (timeLeft <= 0) clearInterval(playerCountdown);
+              if (timeLeft <= 0) { clearInterval(playerCountdown); playerCountdown = null; }
             }, 1000);
 
             showPage('playerPage');
           }
 
+          if (data.progress && data.teams) {
+            teams = data.teams;
+            updateRunways();
+            checkWinner();
+          }
+
           if (data.winner) {
             gameActive = false;
+            // 顯示結算排行榜
+            if (data.teams) {
+              const ranked = Object.values(data.teams).filter(t => t && t.ready).sort((a, b) => b.step - a.step);
+              const finalEl = document.getElementById('finalScore');
+              if (finalEl && ranked.length > 0) {
+                finalEl.textContent = ranked.map((t, i) =>
+                  (i===0?'🥇':i===1?'🥈':i===2?'🥉':'#'+(i+1)) + ' ' + t.name + ' ' + t.step + '步'
+                ).join(' | ');
+              }
+            }
             document.getElementById('winnerTeam').textContent = `${data.winner} 獲勝!`;
             showPage('winnerPage');
+            playSound('victory');
           }
         } catch (e) { console.log('訊息錯誤:', e); }
       });
@@ -1021,32 +1186,45 @@ const QUESTIONS = [
       document.querySelectorAll('.answer-btn').forEach(btn => btn.disabled = true);
       document.getElementById('ans' + index).classList.add('selected');
 
-      publish(gameId + '/answer', {
+      publish(gameId + '/answer/' + teamNum, {
         teamNum: teamNum,
         answer: index
       });
 
-      // 立即顯示結果，不用等 host 廣播
-      showPlayerAnswer();
+      // 等待 host 廣播結果，不立即顯示
       showPage('waitingPage');
     }
     
-    function showPlayerAnswer() {
-      const correct = currentQuestion.c;
+    function showPlayerAnswerResult(wasCorrect, isTimeout, speedBonus, stepsGained) {
+      // 清走倒數計時器
+      if (playerCountdown) { clearInterval(playerCountdown); playerCountdown = null; }
 
+      // 顯示玩家之前選擇的答案
+      const correct = currentQuestion.c;
+      const selected = document.querySelector('.answer-btn.selected');
+      if (selected) {
+        if (isTimeout) {
+          // 超時：顯示正確答案，不標記選項
+          selected.classList.add('timeout');
+        } else if (selected.classList.contains('correct')) {
+          // 玩家選中正確答案，不需額外處理
+        } else {
+          // 玩家選錯
+          selected.classList.add('incorrect');
+        }
+      }
+      // 顯示正確答案
       document.querySelectorAll('.answer-btn').forEach((btn, i) => {
         if (i === correct) btn.classList.add('correct');
+        btn.disabled = true;
       });
 
-      const selected = document.querySelector('.answer-btn.selected');
-      if (selected && !selected.classList.contains('correct')) {
-        selected.classList.add('incorrect');
-      }
-
-      const isCorrect = selected && selected.classList.contains('correct');
       const resultMsg = document.getElementById('resultMsg');
-      if (isCorrect) {
-        resultMsg.textContent = `✅`;
+      if (isTimeout) {
+        resultMsg.textContent = `⏱️ 超時`;
+        resultMsg.className = 'result-wrong';
+      } else if (wasCorrect) {
+        resultMsg.textContent = speedBonus > 0 ? `✅ +${stepsGained} ⚡快答+${speedBonus}` : `✅ +${stepsGained}`;
         resultMsg.className = 'result-correct';
       } else {
         resultMsg.textContent = `❌`;
