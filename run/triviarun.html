@@ -772,11 +772,10 @@ const QUESTIONS = [
             showPage('playerPage');
           }
             
-            if (data.winner) {
-              gameActive = false;
-              document.getElementById('winnerTeam').textContent = `${data.winner} 獲勝！`;
-              showPage('winnerPage');
-            }
+          if (data.winner) {
+            gameActive = false;
+            document.getElementById('winnerTeam').textContent = `${data.winner} 獲勝！`;
+            showPage('winnerPage');
           }
         } catch (e) { console.log('訊息錯誤:', e); }
       });
