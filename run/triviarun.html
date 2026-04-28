@@ -403,7 +403,7 @@
             <h1 id="winnerTeam" style="margin-top:20px;">隊伍獲勝!</h1>
             <p class="subtitle" id="finalScore"></p>
           </div>
-          <button class="btn btn-primary big-btn" onclick="showStart()">新遊戲</button>
+          <p style="color:var(--text-muted);margin-top:16px;">等待主持人開始新一局...</p>
         </div>
       </div>
 
@@ -639,28 +639,23 @@ const QUESTIONS = [
       let readyCount = 0;
       for (let i = 0; i < 8; i++) {
         const team = teams[i];
+        const currentQ = team && team.currentQuestion ? team.currentQuestion : null;
+        const qText = currentQ ? currentQ.q : '';
+        
         if (team && team.ready) {
           html += `<div class="team-item filled" style="border-left-color:${team.color}">
             <div class="team-item-name" style="color:${team.color}">${team.name}</div>
-            <div class="team-item-players">📱 ${team.player1} + ${team.player2}</div>
-            <div class="team-item-status ready">✓ 已準備</div>
+            <div class="team-item-players">📱 ${team.player1}${team.solo ? ' 🏃單人' : ' + ' + team.player2}</div>
+            ${qText ? `<div class="team-item-question" style="background:var(--runway);border-radius:6px;padding:6px;margin-top:4px;font-size:0.75rem;color:var(--text-muted);">❓ ${qText}</div>` : ''}
+            <div class="team-item-status ready">✓ 已準備${team.solo ? '（單人）' : ''}</div>
           </div>`;
           readyCount++;
         } else if (team && team.player1) {
-          if (team.solo) {
-            html += `<div class="team-item filled" style="border-left-color:${team.color}">
-              <div class="team-item-name" style="color:${team.color}">${team.name}</div>
-              <div class="team-item-players">📱 ${team.player1} 🏃單人</div>
-              <div class="team-item-status ready">✓ 已準備（單人）</div>
-            </div>`;
-            readyCount++;
-          } else {
-            html += `<div class="team-item waiting" style="border-left-color:${team.color}">
-              <div class="team-item-name" style="color:${team.color}">${team.name}</div>
-              <div class="team-item-players">📱 ${team.player1}</div>
-              <div class="team-item-status waiting">⏳ 等待隊友中...</div>
-            </div>`;
-          }
+          html += `<div class="team-item waiting" style="border-left-color:${team.color}">
+            <div class="team-item-name" style="color:${team.color}">${team.name}</div>
+            <div class="team-item-players">📱 ${team.player1}</div>
+            <div class="team-item-status waiting">⏳ 等待隊友中...</div>
+          </div>`;
         } else {
           html += `<div class="team-item empty"><div class="team-item-name">${TEAM_NAMES[i]}</div><div class="team-item-status">空位</div></div>`;
         }
@@ -711,6 +706,7 @@ const QUESTIONS = [
 
       const q = team.questions[team.qIndex];
       team.currentQuestion = q;
+      updateTeamList(); // 更新隊伍列表顯示當前問題
       publish(gameId + '/question/' + teamNum, { question: q, time: QUESTION_TIME });
 
       if (team.questionTimer) clearInterval(team.questionTimer);
@@ -731,6 +727,8 @@ const QUESTIONS = [
           publish(gameId + '/question/' + teamNum, {
             question: q, time: 0, showAnswer: true, timeout: true
           });
+          team.currentQuestion = null; // 清走當前問題
+          updateTeamList(); // 更新隊伍列表
           updateRunways();
           checkWinner();
           // 下一題
@@ -854,6 +852,8 @@ const QUESTIONS = [
         question: team.currentQuestion, time: 0, showAnswer: true, correct: correct,
         speedBonus: correct ? steps - 1 : 0, stepsGained: correct ? steps : 0
       });
+      team.currentQuestion = null; // 清走當前問題
+      updateTeamList(); // 更新隊伍列表
       updateRunways();
       checkWinner();
 
@@ -970,6 +970,7 @@ const QUESTIONS = [
           teams[teamNum].step = 0;
           teams[teamNum].progress = 0;
           teams[teamNum].qIndex = 0;
+          teams[teamNum].currentQuestion = null; // 清走當前問題
           if (teams[teamNum].questionTimer) clearInterval(teams[teamNum].questionTimer);
         }
       });
@@ -1184,6 +1185,18 @@ const QUESTIONS = [
             document.getElementById('winnerTeam').textContent = `${data.winner} 獲勝!`;
             showPage('winnerPage');
             playSound('victory');
+          }
+
+          // 新一局：重置玩家狀態，繼續等待下一局
+          if (data.type === 'newround') {
+            currentQuestion = null;
+            answered = false;
+            gameActive = false;
+            if (playerCountdown) { clearInterval(playerCountdown); playerCountdown = null; }
+            // 重置自己隊伍的步數為 0
+            if (teams[teamNum]) { teams[teamNum].step = 0; }
+            updateRunways();
+            showPage('waitingPage');
           }
         } catch (e) { console.log('訊息錯誤:', e); }
       });
